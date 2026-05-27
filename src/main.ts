@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import authRoutes from './routes/auth.routes';
 
 
 dotenv.config();
@@ -17,6 +18,8 @@ app.use(express.json());
 app.get('/health', (req, res) => {
     res.json({ status: 'Backend runnig meloo' });
 });
+
+app.use('/auth', authRoutes)
 
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en puerto ${PORT}`);
