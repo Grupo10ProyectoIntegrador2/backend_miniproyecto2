@@ -32,3 +32,27 @@ export async function checkEmailExists(email: string): Promise<boolean> {
         throw new Error('Error al validar email');
     }
 }
+
+
+export async function saveUserProfile(uid: string, profileData: {
+    firstName: string;
+    lastName: string;
+    username: string;
+    email: string;
+    avatarUrl: string;
+    provider: 'email' | 'google';
+}): Promise<void> {
+    try {
+        const userDoc = {
+            uid,
+            ...profileData,
+            username: profileData.username.toLowerCase(),
+            createdAt: new Date().toISOString(),
+        };
+
+        await db.collection('users').doc(uid).set(userDoc);
+    } catch (error) {
+        console.error('Error saving user profile', error);
+        throw new Error('Error saving user profile');
+    }
+}

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { checkUsernameExists, checkEmailExists } from '../services/validation.service';
+import { checkUsernameExists, checkEmailExists, saveUserProfile } from '../services/validation.service';
 
 const router = Router();
 
@@ -58,6 +58,59 @@ router.post('/check-email', async (req: Request, res: Response) => {
         });
     }
 });
+
+
+//POST /auth/register , guarda el perfil en firestore
+router.post('/register', async (req: Request, res: Response) => {
+    try {
+        const { uid, firstName, lastName, username, email, avatarUrl, provider } = req.body;
+
+        if (!uid || !firstName || !lastName || !username || !email || !provider) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields',
+            });
+        }
+
+        const usernameExists = await checkUsernameExists(username);
+        const emailExists = await checkEmailExists(email);
+
+        if (usernameExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'Username already taken',
+            });
+        }
+
+        if (emailExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email already taken',
+            });
+        }
+
+        await saveUserProfile(uid, {
+            firstName,
+            lastName,
+            username,
+            email,
+            avatarUrl: avatarUrl || '',
+            provider,
+        });
+
+        res.json({
+            success: true,
+            message: 'User registered successfully',
+        });
+    } catch (error) {
+        console.error('Error registering user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error registering user',
+        });
+    }
+});
+
 
 
 export default router;
