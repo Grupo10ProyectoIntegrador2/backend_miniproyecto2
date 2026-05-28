@@ -140,5 +140,46 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 
+// POST /auth/complete-profile - Completar perfil tras Google Sign-In
+router.post('/complete-profile', async (req: Request, res: Response) => {
+  try {
+    const { uid, username, firstName, lastName, email, avatarUrl } = req.body;
+
+    if (!uid || !username || !firstName || !lastName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields',
+      });
+    }
+
+    const usernameExists = await checkUsernameExists(username);
+    if (usernameExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username already taken',
+      });
+    }
+
+    await saveUserProfile(uid, {
+      firstName,
+      lastName,
+      username,
+      email,
+      avatarUrl: avatarUrl || '',
+      provider: 'google',
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile completed successfully',
+    });
+  } catch (error) {
+    console.error('Error completing profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error completing profile',
+    });
+  }
+});
 
 export default router;
