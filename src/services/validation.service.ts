@@ -56,3 +56,19 @@ export async function saveUserProfile(uid: string, profileData: {
         throw new Error('Error saving user profile');
     }
 }
+
+
+export async function getUserProfile(uid: string): Promise<any> {
+    try {
+        const doc = await db.collection('users').doc(uid).get();
+
+        if (!doc.exists) {
+            throw new Error('User profile not found');
+        }
+
+        return doc.data();
+    } catch (error) {
+        console.error('Error getting user profile:', error);
+        throw new Error('Error getting user profile');
+    }
+}

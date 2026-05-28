@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { checkUsernameExists, checkEmailExists, saveUserProfile } from '../services/validation.service';
+import { checkUsernameExists, checkEmailExists, saveUserProfile, getUserProfile } from '../services/validation.service';
 
 const router = Router();
 
@@ -107,6 +107,34 @@ router.post('/register', async (req: Request, res: Response) => {
         res.status(500).json({
             success: false,
             message: 'Error registering user',
+        });
+    }
+});
+
+
+//POST /auth/login 
+router.post('/login', async (req: Request, res: Response) => {
+    try {
+        const { uid } = req.body;
+
+        if(!uid) {
+            return res.status(400).json({
+                success: false,
+                message: 'UID is required',
+            });
+        }
+
+        const userProfile = await getUserProfile(uid);
+
+        res.json({
+            success: true,
+            user: userProfile,
+        });
+    } catch (error) {
+        console.error('Error logging in user:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error retrieving user profile',
         });
     }
 });
