@@ -9,8 +9,11 @@ if (!projectId) {
   throw new Error('FIREBASE_PROJECT_ID no está definido en .env');
 }
 
+const serviceAccount = require('../../firebase-adminsdk.json');
+
 admin.initializeApp({
-    projectId,
+  credential: admin.credential.cert(serviceAccount),
+  projectId,
 });
 
 export const db = admin.firestore();
