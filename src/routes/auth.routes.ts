@@ -4,7 +4,41 @@ import { checkUsernameExists, checkEmailExists, saveUserProfile, getUserProfile 
 
 const router = Router();
 
-// POST /auth/check-username
+/**
+ * @swagger
+ * /auth/check-username:
+ *   post:
+ *     summary: Verifica si un nombre de usuario está disponible
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 description: Nombre de usuario a verificar
+ *     responses:
+ *       200:
+ *         description: Resultado de disponibilidad del username
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Username requerido
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/check-username', async (req: Request, res: Response) => {
     try {
         const { username } = req.body;
@@ -32,7 +66,42 @@ router.post('/check-username', async (req: Request, res: Response) => {
 });
 
 
-//POST /auth/check-email
+/**
+ * @swagger
+ * /auth/check-email:
+ *   post:
+ *     summary: Verifica si un correo electrónico está registrado
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Correo electrónico a verificar
+ *     responses:
+ *       200:
+ *         description: Resultado de disponibilidad del email
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Email requerido
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/check-email', async (req: Request, res: Response) => {
     try {
         const {email} = req.body;
@@ -60,7 +129,66 @@ router.post('/check-email', async (req: Request, res: Response) => {
 });
 
 
-//POST /auth/register , guarda el perfil en firestore
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Registra un nuevo usuario con email y contraseña
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - uid
+ *               - firstName
+ *               - lastName
+ *               - username
+ *               - email
+ *               - provider
+ *             properties:
+ *               uid:
+ *                 type: string
+ *                 description: ID único de Firebase
+ *               firstName:
+ *                 type: string
+ *                 description: Nombre del usuario
+ *               lastName:
+ *                 type: string
+ *                 description: Apellido del usuario
+ *               username:
+ *                 type: string
+ *                 description: Nombre de usuario único
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Correo electrónico
+ *               avatarUrl:
+ *                 type: string
+ *                 description: URL de la foto de perfil (opcional)
+ *               provider:
+ *                 type: string
+ *                 enum: [email, google]
+ *                 description: Proveedor de autenticación
+ *     responses:
+ *       200:
+ *         description: Usuario registrado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Campos faltantes o datos duplicados
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/register', async (req: Request, res: Response) => {
     try {
         const { uid, firstName, lastName, username, email, avatarUrl, provider } = req.body;
@@ -112,7 +240,42 @@ router.post('/register', async (req: Request, res: Response) => {
 });
 
 
-//POST /auth/login 
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Inicia sesión de un usuario y retorna su perfil
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - uid
+ *             properties:
+ *               uid:
+ *                 type: string
+ *                 description: ID único de Firebase del usuario
+ *     responses:
+ *       200:
+ *         description: Usuario autenticado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 user:
+ *                   type: object
+ *                   nullable: true
+ *       400:
+ *         description: UID requerido
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/login', async (req: Request, res: Response) => {
     try {
         const { uid } = req.body;
@@ -125,7 +288,8 @@ router.post('/login', async (req: Request, res: Response) => {
         }
 
         const userProfile = await getUserProfile(uid);
-
+        
+        // Si es null, es un usuario nuevo; si existe, es un usuario conocido
         res.json({
             success: true,
             user: userProfile,
@@ -140,7 +304,61 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 
-// POST /auth/complete-profile - Completar perfil tras Google Sign-In
+/**
+ * @swagger
+ * /auth/complete-profile:
+ *   post:
+ *     summary: Completa el perfil de un usuario tras registrarse con Google
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - uid
+ *               - username
+ *               - firstName
+ *               - lastName
+ *               - email
+ *             properties:
+ *               uid:
+ *                 type: string
+ *                 description: ID único de Firebase
+ *               username:
+ *                 type: string
+ *                 description: Nombre de usuario único
+ *               firstName:
+ *                 type: string
+ *                 description: Nombre del usuario
+ *               lastName:
+ *                 type: string
+ *                 description: Apellido del usuario
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Correo electrónico
+ *               avatarUrl:
+ *                 type: string
+ *                 description: URL de la foto de perfil (opcional)
+ *     responses:
+ *       200:
+ *         description: Perfil completado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Campos faltantes o username duplicado
+ *       500:
+ *         description: Error del servidor
+ */
 router.post('/complete-profile', async (req: Request, res: Response) => {
   try {
     const { uid, username, firstName, lastName, email, avatarUrl } = req.body;
