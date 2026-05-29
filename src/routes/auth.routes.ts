@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { checkUsernameExists, checkEmailExists, saveUserProfile, getUserProfile } from '../services/validation.service';
+import { validateUsername, validateEmail, validateNames } from '../services/validation.service';
 
 const router = Router();
 
@@ -196,7 +197,32 @@ router.post('/register', async (req: Request, res: Response) => {
         if (!uid || !firstName || !lastName || !username || !email || !provider) {
             return res.status(400).json({
                 success: false,
-                message: 'Missing required fields',
+                message: 'Campos faltantes',
+            });
+        }
+
+        // Nuevas validaciones
+        const namesValidation = validateNames(firstName, lastName);
+        if (!namesValidation.valid) {
+            return res.status(400).json({
+                success: false,
+                message: namesValidation.error,
+            });
+        }
+
+        const usernameValidation = validateUsername(username);
+        if (!usernameValidation.valid) {
+            return res.status(400).json({
+                success: false,
+                message: usernameValidation.error,
+            });
+        }
+
+        const emailValidation = validateEmail(email);
+        if (!emailValidation.valid) {
+            return res.status(400).json({
+                success: false,
+                message: emailValidation.error,
             });
         }
 
@@ -206,14 +232,14 @@ router.post('/register', async (req: Request, res: Response) => {
         if (usernameExists) {
             return res.status(400).json({
                 success: false,
-                message: 'Username already taken',
+                message: 'Username ya está en uso',
             });
         }
 
         if (emailExists) {
             return res.status(400).json({
                 success: false,
-                message: 'Email already taken',
+                message: 'Email ya está registrado',
             });
         }
 
