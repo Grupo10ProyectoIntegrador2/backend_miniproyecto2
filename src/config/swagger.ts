@@ -1,6 +1,11 @@
 import swaggerJSDoc from "swagger-jsdoc";
 import path from "path";
 
+const serverUrl = process.env.SWAGGER_URL || 
+  (process.env.NODE_ENV === 'production' 
+    ? 'https://backend-miniproyecto2.onrender.com' 
+    : 'http://localhost:3000');
+
 const options: swaggerJSDoc.Options = {
     definition: {
         openapi: '3.0.0',
@@ -11,12 +16,15 @@ const options: swaggerJSDoc.Options = {
         },
         servers: [
             {
-                url: 'http://localhost:3000',
-                description: 'Development server',
+                url: serverUrl,
+                description: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
             },
         ],
     },
-    apis: [path.join(__dirname, '../routes/*.ts')],
+    apis: [
+        path.join(__dirname, '../routes/*.js'),
+        path.join(__dirname, '../routes/*.ts'),
+    ],
 };
 
 export const swaggerSpec = swaggerJSDoc(options);
