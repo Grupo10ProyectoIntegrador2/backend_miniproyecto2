@@ -1,22 +1,40 @@
 import admin from 'firebase-admin';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
 const projectId = process.env.FIREBASE_PROJECT_ID;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 
-if (!projectId || !privateKey || !clientEmail) {
-  throw new Error('Firebase credentials no están definidas en las variables de entorno');
+if (!projectId) {
+  throw new Error('FIREBASE_PROJECT_ID no está definido');
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert({
+let credential: admin.ServiceAccount | admin.credential.Credential;
+
+// Intenta leer del archivo JSON primero (desarrollo local)
+const credPath = path.join(__dirname, '../../firebase-adminsdk.json');
+if (fs.existsSync(credPath)) {
+  credential = admin.credential.cert(require(credPath));
+} else {
+  // Si no existe, usa variables de entorno (producción en Render)
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+  if (!privateKey || !clientEmail) {
+    throw new Error('Firebase credentials no están definidas');
+  }
+
+  credential = admin.credential.cert({
     projectId,
     privateKey: privateKey.replace(/\\n/g, '\n'),
     clientEmail,
-  }),
+  });
+}
+
+admin.initializeApp({
+  credential,
   projectId,
 });
 
