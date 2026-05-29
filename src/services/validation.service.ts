@@ -63,12 +63,12 @@ export async function getUserProfile(uid: string): Promise<any> {
         const doc = await db.collection('users').doc(uid).get();
 
         if (!doc.exists) {
-            throw new Error('User profile not found');
+            return null; // En lugar de throw, devolvemos null
         }
 
         return doc.data();
     } catch (error) {
         console.error('Error getting user profile:', error);
-        throw new Error('Error getting user profile');
+        return null; // Devolvemos null incluso en caso de error
     }
 }
