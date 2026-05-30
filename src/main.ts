@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 // los middlewares
 app.use(cors({
     origin: process.env.NODE_ENV === 'production' 
-        ? 'https://tu-frontend.vercel.app'  // Reemplaza con tu URL del frontend
+        ? 'https://frontend-miniproyecto2.vercel.app' 
         : 'http://localhost:5173',
     credentials: true,
 }));
