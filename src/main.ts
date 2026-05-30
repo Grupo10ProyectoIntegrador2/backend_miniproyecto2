@@ -12,7 +12,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // los middlewares
-app.use(cors());
+app.use(cors({
+    origin: process.env.NODE_ENV === 'production' 
+        ? 'https://tu-frontend.vercel.app'  // Reemplaza con tu URL del frontend
+        : 'http://localhost:5173',
+    credentials: true,
+}));
 app.use(express.json());
 
 // ruta de prueba
