@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 import {
     checkUsernameExists,
     checkEmailExists,
@@ -426,7 +427,7 @@ router.post('/complete-profile', async (req: Request, res: Response) => {
  *       500:
  *         description: Error del servidor
  */
-router.get('/profile/:uid', async (req: Request, res: Response) => {
+router.get('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
         const uid = req.params['uid'] as string;
 
@@ -490,10 +491,18 @@ router.get('/profile/:uid', async (req: Request, res: Response) => {
  *       500:
  *         description: Error del servidor
  */
-router.put('/profile/:uid', async (req: Request, res: Response) => {
+router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
         const uid = req.params['uid'] as string;
         const { firstName, lastName, username, avatarUrl } = req.body;
+
+        // Control de acceso: solo el dueño del perfil puede modificarlo
+        if (req.user!.uid !== uid) {
+            return res.status(403).json({
+                success: false,
+                message: 'No tienes permiso para modificar este perfil.',
+            });
+        }
 
         // Verificar que el perfil existe
         const existing = await getUserProfile(uid);
@@ -567,9 +576,17 @@ router.put('/profile/:uid', async (req: Request, res: Response) => {
  *       500:
  *         description: Error del servidor
  */
-router.delete('/profile/:uid', async (req: Request, res: Response) => {
+router.delete('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
         const uid = req.params['uid'] as string;
+
+        // Control de acceso: solo el dueño de la cuenta puede eliminarla
+        if (req.user!.uid !== uid) {
+            return res.status(403).json({
+                success: false,
+                message: 'No tienes permiso para eliminar esta cuenta.',
+            });
+        }
 
         // Verificar que el perfil existe antes de eliminar
         const existing = await getUserProfile(uid);
