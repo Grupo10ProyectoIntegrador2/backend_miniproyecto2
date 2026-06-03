@@ -1,6 +1,7 @@
 import { db } from '../config/firebase';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
+import { deleteRoomsAndMembershipsByUser } from './rooms.service';
 
 // ─── Avatar ────────────────────────────────────────────────────────────────
 
@@ -222,6 +223,9 @@ export async function updateUserProfile(uid: string, updates: {
 
 export async function deleteUserProfile(uid: string): Promise<void> {
     try {
+        // Eliminar las salas creadas por el usuario y todos sus memberships asociados
+        await deleteRoomsAndMembershipsByUser(uid);
+
         // Eliminar documento de Firestore
         await db.collection('users').doc(uid).delete();
 

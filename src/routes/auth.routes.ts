@@ -494,7 +494,7 @@ router.get('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
 router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
         const uid = req.params['uid'] as string;
-        const { firstName, lastName, username, avatarUrl } = req.body;
+        const { firstName, lastName, username, avatarUrl, email } = req.body;
 
         // Control de acceso: solo el dueño del perfil puede modificarlo
         if (req.user!.uid !== uid) {
@@ -504,6 +504,11 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             });
         }
 
+        // El correo electrónico no se puede cambiar
+        if (email !== undefined) {
+            return userError(res, 400, 'El correo electrónico no se puede modificar.');
+        }
+
         // Verificar que el perfil existe
         const existing = await getUserProfile(uid);
         if (!existing) {
@@ -511,6 +516,11 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
                 success: false,
                 message: 'No encontramos ningún perfil para actualizar.',
             });
+        }
+
+        // Las cuentas creadas con Google no pueden modificar sus datos
+        if (existing.provider === 'google') {
+            return userError(res, 403, 'Las cuentas vinculadas con Google no pueden modificar sus datos de perfil.');
         }
 
         // Validar nombres si se envían

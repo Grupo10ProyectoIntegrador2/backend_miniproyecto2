@@ -168,3 +168,53 @@ export async function getJoinedRoomsByUser(uid: string): Promise<Room[]> {
         throw new Error('No se pudieron obtener las salas unidas. Intenta de nuevo más tarde.');
     }
 }
+
+/**
+ * Elimina todas las salas creadas por un usuario y los memberships asociados a ellas.
+ * También elimina los memberships propios del usuario en salas de terceros.
+ *
+ * @param uid UID del usuario a limpiar
+ */
+export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void> {
+    try {
+        // 1. Obtener todas las salas creadas por este usuario
+        const createdRoomsSnapshot = await db
+            .collection('rooms')
+            .where('createdBy', '==', uid)
+            .get();
+
+        const batch = db.batch();
+
+        // 2. Para cada sala creada, eliminar todos los memberships de esa sala (de cualquier usuario)
+        //    y luego eliminar la sala misma.
+        for (const roomDoc of createdRoomsSnapshot.docs) {
+            const roomId = roomDoc.id;
+
+            const roomMembershipsSnapshot = await db
+                .collection('room_memberships')
+                .where('roomId', '==', roomId)
+                .get();
+
+            roomMembershipsSnapshot.docs.forEach((membershipDoc) => {
+                batch.delete(membershipDoc.ref);
+            });
+
+            batch.delete(roomDoc.ref);
+        }
+
+        // 3. Eliminar los memberships del usuario en salas de otros (donde no es creador)
+        const ownMembershipsSnapshot = await db
+            .collection('room_memberships')
+            .where('uid', '==', uid)
+            .get();
+
+        ownMembershipsSnapshot.docs.forEach((membershipDoc) => {
+            batch.delete(membershipDoc.ref);
+        });
+
+        await batch.commit();
+    } catch (error) {
+        console.error(`Error al eliminar salas y memberships del usuario ${uid}:`, error);
+        throw new Error('No se pudieron eliminar las salas del usuario. Intenta de nuevo más tarde.');
+    }
+}
