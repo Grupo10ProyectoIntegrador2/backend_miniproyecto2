@@ -518,10 +518,6 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             });
         }
 
-        // Las cuentas creadas con Google no pueden modificar sus datos
-        if (existing.provider === 'google') {
-            return userError(res, 403, 'Las cuentas vinculadas con Google no pueden modificar sus datos de perfil.');
-        }
 
         // Validar nombres si se envían
         if (firstName !== undefined || lastName !== undefined) {
