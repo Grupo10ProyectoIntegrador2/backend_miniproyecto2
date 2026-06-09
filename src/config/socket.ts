@@ -48,7 +48,8 @@ export function initSocket(httpServer: HttpServer): Server {
     });
 
     io.use(async (socket, next) => {
-        const token = socket.handshake.auth?.token;
+        // Busca el token en 'auth' (Frontend web estándar) o en 'query' (Postman)
+        const token = socket.handshake.auth?.token || socket.handshake.query?.token;
 
         if (typeof token !== 'string' || token.trim().length === 0) {
             return next(new Error('Autenticación requerida.'));
