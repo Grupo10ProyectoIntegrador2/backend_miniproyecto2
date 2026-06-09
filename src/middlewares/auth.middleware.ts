@@ -1,13 +1,44 @@
 import { Request, Response, NextFunction } from 'express';
 import admin from 'firebase-admin';
 
+export interface AuthUser {
+    uid: string;
+    email?: string | undefined;
+    name?: string;
+    [key: string]: unknown;
+}
+
 // Extendemos la interfaz Request de Express para incluir al usuario autenticado
 export interface AuthenticatedRequest extends Request {
-    user?: {
-        uid: string;
-        email?: string | undefined;
-        [key: string]: any;
-    };
+    user?: AuthUser;
+}
+
+/**
+ * Verifica un token Bearer (Firebase o mock en desarrollo).
+ * Retorna null si el token es inválido.
+ */
+export async function verifyAuthToken(token: string): Promise<AuthUser | null> {
+    if (!token) {
+        return null;
+    }
+
+    if (process.env.NODE_ENV !== 'production' && token.startsWith('mock-')) {
+        const mockUid = token.replace('mock-', '');
+        return {
+            uid: mockUid,
+            email: `${mockUid}@example.edu`,
+            name: `Usuario Mock ${mockUid}`,
+        };
+    }
+
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        return decodedToken as AuthUser;
+    } catch (firebaseError: unknown) {
+        const message = firebaseError instanceof Error ? firebaseError.message : 'Token inválido';
+        console.error('Error verificando ID Token de Firebase:', message);
+        return null;
+    }
 }
 
 /**
@@ -34,30 +65,16 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
             });
         }
 
-        // ─── Bypass de Desarrollo (Tokens Mock) ─────────────────────────────────
-        // Si no estamos en producción y el token empieza con 'mock-', lo aceptamos
-        if (process.env.NODE_ENV !== 'production' && token.startsWith('mock-')) {
-            const mockUid = token.replace('mock-', '');
-            req.user = {
-                uid: mockUid,
-                email: `${mockUid}@example.edu`,
-                name: `Usuario Mock ${mockUid}`,
-            };
-            return next();
-        }
-
-        // ─── Validación Real con Firebase Auth ─────────────────────────────────
-        try {
-            const decodedToken = await admin.auth().verifyIdToken(token);
-            req.user = decodedToken;
-            return next();
-        } catch (firebaseError: any) {
-            console.error('Error verificando ID Token de Firebase:', firebaseError.message);
+        const user = await verifyAuthToken(token);
+        if (!user) {
             return res.status(401).json({
                 success: false,
                 message: 'Tu sesión ha expirado o el token es inválido. Por favor inicia sesión de nuevo.',
             });
         }
+
+        req.user = user;
+        return next();
     } catch (error) {
         console.error('Error general en middleware de autenticación:', error);
         return res.status(500).json({

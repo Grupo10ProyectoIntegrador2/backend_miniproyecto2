@@ -6,8 +6,11 @@ import {
     joinRoom, 
     getJoinedRoomsByUser,
     updateRoomName,
-    deleteRoom
+    deleteRoom,
+    getRoomById,
+    isRoomMember,
 } from '../services/rooms.service';
+import { getRoomMessages } from '../services/messages.service';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -232,6 +235,75 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
             success: false,
             message: error.message || 'No se pudieron recuperar tus salas. Intenta más tarde.',
         });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /rooms/:roomId/messages - Historial de chat de una sala
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /rooms/{roomId}/messages:
+ *   get:
+ *     summary: Obtiene el historial de mensajes de una sala (Requiere ser miembro)
+ *     tags: [Salas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Historial obtenido exitosamente
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Sin acceso a la sala
+ *       404:
+ *         description: Sala no encontrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get('/:roomId/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+        const uid = req.user!.uid;
+
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        const trimmedRoomId = roomId.trim();
+        const room = await getRoomById(trimmedRoomId);
+
+        if (!room) {
+            return userError(res, 404, 'La sala no existe.');
+        }
+
+        if (room.status !== 'active') {
+            return userError(res, 400, 'La sala no está activa.');
+        }
+
+        const isMember = await isRoomMember(trimmedRoomId, uid);
+        if (!isMember) {
+            return userError(res, 403, 'No tienes acceso al chat de esta sala.');
+        }
+
+        const messages = await getRoomMessages(trimmedRoomId);
+
+        res.json({
+            success: true,
+            roomId: trimmedRoomId,
+            messages,
+        });
+    } catch (error: unknown) {
+        console.error('Error en GET /rooms/:roomId/messages:', error);
+        const message = error instanceof Error ? error.message : 'No se pudo obtener el historial de chat.';
+        res.status(500).json({ success: false, message });
     }
 });
 

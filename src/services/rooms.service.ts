@@ -1,4 +1,5 @@
 import { db } from '../config/firebase';
+import { deleteMessagesByRoomId } from './messages.service';
 
 export interface Room {
     id: string;
@@ -99,6 +100,20 @@ export async function getRoomById(id: string): Promise<Room | null> {
 }
 
 /**
+ * Verifica si un usuario es miembro de una sala (tiene membership activo).
+ */
+export async function isRoomMember(roomId: string, uid: string): Promise<boolean> {
+    try {
+        const membershipId = `${roomId}_${uid}`;
+        const doc = await db.collection('room_memberships').doc(membershipId).get();
+        return doc.exists;
+    } catch (error) {
+        console.error(`Error verificando membership de ${uid} en sala ${roomId}:`, error);
+        return false;
+    }
+}
+
+/**
  * Une a un usuario a una sala activa.
  *
  * @param roomId ID de la sala
@@ -190,6 +205,7 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
         for (const roomDoc of createdRoomsSnapshot.docs) {
             const roomId = roomDoc.id;
 
+            // Preparar borrado de memberships
             const roomMembershipsSnapshot = await db
                 .collection('room_memberships')
                 .where('roomId', '==', roomId)
@@ -199,10 +215,14 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
                 batch.delete(membershipDoc.ref);
             });
 
+            // Preparar borrado de la sala
             batch.delete(roomDoc.ref);
+
+            // 3. Eliminar mensajes de esya sala inmediatamente
+            await deleteMessagesByRoomId(roomId);
         }
 
-        // 3. Eliminar los memberships del usuario en salas de otros (donde no es creador)
+        // 4. Eliminar los memberships del usuario en salas de otros (donde no es creador)
         const ownMembershipsSnapshot = await db
             .collection('room_memberships')
             .where('uid', '==', uid)
@@ -212,7 +232,9 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
             batch.delete(membershipDoc.ref);
         });
 
+        // Ejecutamos todo el borrado de salas y membresías
         await batch.commit();
+               
     } catch (error) {
         console.error(`Error al eliminar salas y memberships del usuario ${uid}:`, error);
         throw new Error('No se pudieron eliminar las salas del usuario. Intenta de nuevo más tarde.');
@@ -291,6 +313,10 @@ export async function deleteRoom(roomId: string, uid: string): Promise<void> {
             batch.delete(doc.ref);
         });
 
+        // 3. Borrar historial de chat de la sala
+        await deleteMessagesByRoomId(roomId);
+
+        // 4. Ejecutamos el batch para borrar la sala
         await batch.commit();
 
     } catch (error) {
