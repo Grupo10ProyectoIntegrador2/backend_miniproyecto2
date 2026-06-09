@@ -1,6 +1,119 @@
 import { db } from '../config/firebase';
+import * as admin from 'firebase-admin';
+import * as crypto from 'crypto';
+import { deleteRoomsAndMembershipsByUser } from './rooms.service';
 
-//verificar si un username ya existe en firestore
+// ─── Avatar ────────────────────────────────────────────────────────────────
+
+/**
+ * Genera la URL de Gravatar a partir del correo electrónico.
+ * Si el usuario tiene foto en Gravatar, se muestra; si no, se usa
+ * un identicon generado automáticamente (d=identicon).
+ */
+export function getAvatarUrl(email: string): string {
+    const normalized = email.trim().toLowerCase();
+    const hash = crypto.createHash('md5').update(normalized).digest('hex');
+    return `https://www.gravatar.com/avatar/${hash}?s=200&d=identicon`;
+}
+
+
+// ─── Validaciones de formato ───────────────────────────────────────────────
+
+export function validateUsername(username: string): { valid: boolean; error?: string } {
+    if (!username || username.trim().length === 0) {
+        return { valid: false, error: 'El nombre de usuario no puede estar vacío.' };
+    }
+
+    if (username.length < 3) {
+        return { valid: false, error: 'El nombre de usuario debe tener al menos 3 caracteres.' };
+    }
+
+    if (username.length > 30) {
+        return { valid: false, error: 'El nombre de usuario no puede superar los 30 caracteres.' };
+    }
+
+    if (/^(\d)\1+$/.test(username)) {
+        return { valid: false, error: 'El nombre de usuario no puede ser solo números repetidos.' };
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+        return { valid: false, error: 'El nombre de usuario solo puede contener letras, números, guiones y guiones bajos.' };
+    }
+
+    return { valid: true };
+}
+
+export function validateEmail(email: string): { valid: boolean; error?: string } {
+    if (!email || email.trim().length === 0) {
+        return { valid: false, error: 'El correo electrónico no puede estar vacío.' };
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        return { valid: false, error: 'El formato del correo electrónico no es válido.' };
+    }
+
+    const [localPart, domain] = email.split('@');
+    if (!localPart || !domain) {
+        return { valid: false, error: 'El formato del correo electrónico no es válido.' };
+    }
+
+    if (/^(\d)\1+$/.test(localPart)) {
+        return { valid: false, error: 'El correo electrónico no es válido.' };
+    }
+
+    // ── Validación de correo institucional (.edu) ──
+    // Acepta: algo.edu, algo.edu.co, algo.edu.es, algo.edu.mx, etc.
+    const eduRegex = /\.edu(\.[a-z]{2,})?$/i;
+    if (!eduRegex.test(domain)) {
+        return {
+            valid: false,
+            error: 'Solo se aceptan correos institucionales con dominio .edu (por ejemplo: usc.edu.co, correounivalle.edu.co, uao.edu.es).',
+        };
+    }
+
+    return { valid: true };
+}
+
+export function validateNames(firstName: string, lastName: string): { valid: boolean; error?: string } {
+    if (!firstName || firstName.trim().length === 0) {
+        return { valid: false, error: 'El nombre no puede estar vacío.' };
+    }
+
+    if (!lastName || lastName.trim().length === 0) {
+        return { valid: false, error: 'El apellido no puede estar vacío.' };
+    }
+
+    if (firstName.trim().length < 2) {
+        return { valid: false, error: 'El nombre debe tener al menos 2 caracteres.' };
+    }
+
+    if (lastName.trim().length < 2) {
+        return { valid: false, error: 'El apellido debe tener al menos 2 caracteres.' };
+    }
+
+    if (/^\d+$/.test(firstName.trim())) {
+        return { valid: false, error: 'El nombre no puede contener solo números.' };
+    }
+
+    if (/^\d+$/.test(lastName.trim())) {
+        return { valid: false, error: 'El apellido no puede contener solo números.' };
+    }
+
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/.test(firstName)) {
+        return { valid: false, error: 'El nombre solo puede contener letras.' };
+    }
+
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/.test(lastName)) {
+        return { valid: false, error: 'El apellido solo puede contener letras.' };
+    }
+
+    return { valid: true };
+}
+
+
+// ─── Firestore: verificar existencia ──────────────────────────────────────
+
 export async function checkUsernameExists(username: string): Promise<boolean> {
     try {
         const snapshot = await db
@@ -12,12 +125,10 @@ export async function checkUsernameExists(username: string): Promise<boolean> {
         return !snapshot.empty;
     } catch (error) {
         console.error('Error validando username:', error);
-        throw new Error('Error al validar username');
+        throw new Error('No se pudo verificar la disponibilidad del nombre de usuario. Intenta de nuevo.');
     }
 }
 
-
-//verificar si un email ya existe en firestore
 export async function checkEmailExists(email: string): Promise<boolean> {
     try {
         const snapshot = await db
@@ -29,10 +140,24 @@ export async function checkEmailExists(email: string): Promise<boolean> {
         return !snapshot.empty;
     } catch (error) {
         console.error('Error validando email:', error);
-        throw new Error('Error al validar email');
+        throw new Error('No se pudo verificar la disponibilidad del correo. Intenta de nuevo.');
     }
 }
 
+
+// ─── Firestore: CRUD de perfil ─────────────────────────────────────────────
+
+export interface UserProfile {
+    uid: string;
+    firstName: string;
+    lastName: string;
+    username: string;
+    email: string;
+    avatarUrl: string;
+    provider: 'email' | 'google';
+    createdAt: string;
+    updatedAt?: string;
+}
 
 export async function saveUserProfile(uid: string, profileData: {
     firstName: string;
@@ -43,132 +168,73 @@ export async function saveUserProfile(uid: string, profileData: {
     provider: 'email' | 'google';
 }): Promise<void> {
     try {
-        const userDoc = {
+        const userDoc: UserProfile = {
             uid,
             ...profileData,
             username: profileData.username.toLowerCase(),
+            email: profileData.email.toLowerCase(),
             createdAt: new Date().toISOString(),
         };
 
         await db.collection('users').doc(uid).set(userDoc);
     } catch (error) {
-        console.error('Error saving user profile', error);
-        throw new Error('Error saving user profile');
+        console.error('Error guardando perfil de usuario:', error);
+        throw new Error('No se pudo guardar el perfil. Intenta de nuevo más tarde.');
     }
 }
 
-
-export async function getUserProfile(uid: string): Promise<any> {
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     try {
         const doc = await db.collection('users').doc(uid).get();
 
         if (!doc.exists) {
-            return null; // En lugar de throw, devolvemos null
+            return null;
         }
 
-        return doc.data();
+        return doc.data() as UserProfile;
     } catch (error) {
-        console.error('Error getting user profile:', error);
-        return null; // Devolvemos null incluso en caso de error
+        console.error('Error obteniendo perfil de usuario:', error);
+        return null;
     }
 }
 
-// Validaciones adicionales
-export function validateUsername(username: string): { valid: boolean; error?: string } {
-    // No vacío
-    if (!username || username.trim().length === 0) {
-        return { valid: false, error: 'Username no puede estar vacío' };
-    }
+export async function updateUserProfile(uid: string, updates: {
+    firstName?: string;
+    lastName?: string;
+    username?: string;
+    avatarUrl?: string;
+    email?: string;
+}): Promise<void> {
+    try {
+        const payload: Record<string, string> = {
+            updatedAt: new Date().toISOString(),
+        };
 
-    // Mínimo 3 caracteres
-    if (username.length < 3) {
-        return { valid: false, error: 'Username debe tener al menos 3 caracteres' };
-    }
+        if (updates.firstName !== undefined) payload.firstName = updates.firstName.trim();
+        if (updates.lastName  !== undefined) payload.lastName  = updates.lastName.trim();
+        if (updates.avatarUrl !== undefined) payload.avatarUrl = updates.avatarUrl;
+        if (updates.username  !== undefined) payload.username  = updates.username.toLowerCase();
+        if (updates.email     !== undefined) payload.email     = updates.email.toLowerCase();
 
-    // No puede ser solo números repetidos (0000, 1111, etc.)
-    if (/^(\d)\1+$/.test(username)) {
-        return { valid: false, error: 'Username no puede ser solo números repetidos' };
+        await db.collection('users').doc(uid).update(payload);
+    } catch (error) {
+        console.error('Error actualizando perfil de usuario:', error);
+        throw new Error('No se pudo actualizar el perfil. Intenta de nuevo más tarde.');
     }
-
-    // Solo letras, números, guiones y guiones bajos
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-        return { valid: false, error: 'Username solo puede contener letras, números, guiones y guiones bajos' };
-    }
-
-    return { valid: true };
 }
 
-export function validateEmail(email: string): { valid: boolean; error?: string } {
-    // No vacío
-    if (!email || email.trim().length === 0) {
-        return { valid: false, error: 'Email no puede estar vacío' };
+export async function deleteUserProfile(uid: string): Promise<void> {
+    try {
+        // Eliminar las salas creadas por el usuario y todos sus memberships asociados
+        await deleteRoomsAndMembershipsByUser(uid);
+
+        // Eliminar documento de Firestore
+        await db.collection('users').doc(uid).delete();
+
+        // Eliminar usuario de Firebase Auth
+        await admin.auth().deleteUser(uid);
+    } catch (error) {
+        console.error('Error eliminando usuario:', error);
+        throw new Error('No se pudo eliminar la cuenta. Intenta de nuevo más tarde.');
     }
-
-    // Formato válido de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        return { valid: false, error: 'Email inválido' };
-    }
-
-    // Validar que la parte local (antes del @) no sea solo números repetidos
-    const [localPart, domain] = email.split('@');
-    if (!localPart || !domain) {
-        return { valid: false, error: 'Email inválido' };
-    }
-
-    if (/^(\d)\1+$/.test(localPart)) {
-        return { valid: false, error: 'Email inválido' };
-    }
-
-    // Validar que el dominio no sea solo números repetidos
-    const domainName = domain.split('.')[0];
-    if (!domainName) {
-        return { valid: false, error: 'Email inválido' };
-    }
-
-    if (/^(\d)\1+$/.test(domainName)) {
-        return { valid: false, error: 'Email inválido' };
-    }
-
-    return { valid: true };
-}
-
-export function validateNames(firstName: string, lastName: string): { valid: boolean; error?: string } {
-    // No vacíos ni solo espacios
-    if (!firstName || firstName.trim().length === 0) {
-        return { valid: false, error: 'Nombre no puede estar vacío' };
-    }
-
-    if (!lastName || lastName.trim().length === 0) {
-        return { valid: false, error: 'Apellido no puede estar vacío' };
-    }
-
-    // Mínimo 2 caracteres cada uno
-    if (firstName.trim().length < 2) {
-        return { valid: false, error: 'Nombre debe tener al menos 2 caracteres' };
-    }
-
-    if (lastName.trim().length < 2) {
-        return { valid: false, error: 'Apellido debe tener al menos 2 caracteres' };
-    }
-
-    // No puede ser solo números
-    if (/^\d+$/.test(firstName.trim())) {
-        return { valid: false, error: 'Nombre no puede ser solo números' };
-    }
-
-    if (/^\d+$/.test(lastName.trim())) {
-        return { valid: false, error: 'Apellido no puede ser solo números' };
-    }
-
-    // Solo letras y espacios
-    if (!/^[a-zA-ZáéíóúÁÉÍÓÚ\s]+$/.test(firstName)) {
-        return { valid: false, error: 'Nombre solo puede contener letras' };
-    }
-
-    if (!/^[a-zA-ZáéíóúÁÉÍÓÚ\s]+$/.test(lastName)) {
-        return { valid: false, error: 'Apellido solo puede contener letras' };
-    }
-
-    return { valid: true };
 }
