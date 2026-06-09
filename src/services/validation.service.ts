@@ -203,6 +203,7 @@ export async function updateUserProfile(uid: string, updates: {
     lastName?: string;
     username?: string;
     avatarUrl?: string;
+    email?: string;
 }): Promise<void> {
     try {
         const payload: Record<string, string> = {
@@ -213,6 +214,7 @@ export async function updateUserProfile(uid: string, updates: {
         if (updates.lastName  !== undefined) payload.lastName  = updates.lastName.trim();
         if (updates.avatarUrl !== undefined) payload.avatarUrl = updates.avatarUrl;
         if (updates.username  !== undefined) payload.username  = updates.username.toLowerCase();
+        if (updates.email     !== undefined) payload.email     = updates.email.toLowerCase();
 
         await db.collection('users').doc(uid).update(payload);
     } catch (error) {

@@ -504,10 +504,6 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             });
         }
 
-        // El correo electrónico no se puede cambiar
-        if (email !== undefined) {
-            return userError(res, 400, 'El correo electrónico no se puede modificar.');
-        }
 
         // Verificar que el perfil existe
         const existing = await getUserProfile(uid);
@@ -516,6 +512,24 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
                 success: false,
                 message: 'No encontramos ningún perfil para actualizar.',
             });
+        }
+
+        // Los usuarios de Google no pueden cambiar su correo
+        if (email !== undefined && existing.provider === 'google') {
+            return userError(res, 400, 'El correo electrónico no se puede modificar para cuentas de Google.');
+        }
+
+        // Validar y verificar disponibilidad del email si cambió (solo para cuentas normales)
+        if (email !== undefined && email.toLowerCase() !== existing.email) {
+            const emailValidation = validateEmail(email);
+            if (!emailValidation.valid) {
+                return userError(res, 400, emailValidation.error!);
+            }
+
+            const emailExists = await checkEmailExists(email);
+            if (emailExists) {
+                return userError(res, 400, 'Ese correo ya está registrado. Por favor elige otro.');
+            }
         }
 
 
@@ -543,7 +557,7 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             }
         }
 
-        await updateUserProfile(uid, { firstName, lastName, username, avatarUrl });
+        await updateUserProfile(uid, { firstName, lastName, username, avatarUrl, email });
 
         res.json({
             success: true,
