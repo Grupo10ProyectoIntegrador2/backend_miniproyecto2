@@ -109,11 +109,12 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
             message: 'Sala creada exitosamente.',
             room: newRoom,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en POST /rooms:', error);
+        const message = error instanceof Error ? error.message : 'Ocurrió un problema al crear la sala. Intenta de nuevo más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'Ocurrió un problema al crear la sala. Intenta de nuevo más tarde.',
+            message,
         });
     }
 });
@@ -158,11 +159,12 @@ router.get('/', requireAuth, async (_req: AuthenticatedRequest, res: Response) =
             success: true,
             rooms: activeRooms,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en GET /rooms:', error);
+        const message = error instanceof Error ? error.message : 'No se pudieron recuperar las salas en este momento. Intenta más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'No se pudieron recuperar las salas en este momento. Intenta más tarde.',
+            message,
         });
     }
 });
@@ -232,8 +234,8 @@ router.post('/:roomId/join', requireAuth, async (req: AuthenticatedRequest, res:
             message: 'Te uniste a la sala exitosamente.',
             room,
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo unir a la sala. Intenta nuevamente.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo unir a la sala. Intenta nuevamente.';
 
         if (message === 'La sala no existe.') {
             return userError(res, 404, message);
@@ -284,11 +286,12 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
             success: true,
             rooms,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en GET /rooms/joined:', error);
+        const message = error instanceof Error ? error.message : 'No se pudieron recuperar tus salas. Intenta más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'No se pudieron recuperar tus salas. Intenta más tarde.',
+            message,
         });
     }
 });
@@ -485,8 +488,8 @@ router.put('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Respo
             message: 'Sala actualizada exitosamente.',
             room: updatedRoom,
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo editar la sala.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo editar la sala.';
 
         if (message === 'La sala no existe.') return userError(res, 404, message);
         if (message === 'No tienes permisos para editar esta sala.') return userError(res, 403, message);
@@ -556,8 +559,8 @@ router.delete('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Re
             success: true,
             message: 'Sala eliminada exitosamente junto a todos sus accesos.',
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo eliminar la sala.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo eliminar la sala.';
 
         if (message === 'La sala no existe.') return userError(res, 404, message);
         if (message === 'No tienes permisos para eliminar esta sala.') return userError(res, 403, message);
