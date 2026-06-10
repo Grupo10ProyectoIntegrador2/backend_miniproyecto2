@@ -11,7 +11,11 @@ interface SendMessagePayload {
 
 
 function getSocketUser(socket: Socket): AuthUser {
-    return socket.data.user as AuthUser;
+    const user = socket.data.user;
+    if (!user) {
+        throw new Error('Usuario de socket no autenticado.');
+    }
+    return user as AuthUser;
 }
 
 async function assertCanAccessRoom(socket: Socket, roomId: string): Promise<string | null> {
@@ -96,9 +100,12 @@ export function initSocket(httpServer: HttpServer): Server {
             const trimmedRoomId = roomId?.trim?.() ?? '';
             if (!trimmedRoomId) return;
 
-            socket.leave(trimmedRoomId);
-            console.log(`[Socket.IO] Socket ${socket.id} salió de la sala: ${trimmedRoomId}`);
-            socket.to(trimmedRoomId).emit('user-left', { socketId: socket.id, uid });
+            // Verificar si el socket realmente está en la sala antes de irse y notificar
+            if (socket.rooms.has(trimmedRoomId)) {
+                socket.leave(trimmedRoomId);
+                console.log(`[Socket.IO] Socket ${socket.id} salió de la sala: ${trimmedRoomId}`);
+                socket.to(trimmedRoomId).emit('user-left', { socketId: socket.id, uid });
+            }
         });
 
         socket.on('send-message', async (payload: SendMessagePayload) => {
