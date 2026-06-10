@@ -1,6 +1,8 @@
 import { db } from '../config/firebase';
 import { deleteMessagesByRoomId } from './messages.service';
 
+const BATCH_LIMIT = 499; // Firestore permite máx. 500 operaciones por batch
+
 export interface Room {
     id: string;
     name: string;
@@ -14,6 +16,19 @@ export interface RoomMembership {
     roomId: string;
     uid: string;
     joinedAt: string;
+}
+
+/**
+ * Elimina una lista de documentos en lotes de hasta BATCH_LIMIT operaciones.
+ * Previene exceder el límite de 500 operaciones por batch de Firestore.
+ */
+async function commitBatchDeletes(docs: FirebaseFirestore.QueryDocumentSnapshot[]): Promise<void> {
+    for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
+        const chunk = docs.slice(i, i + BATCH_LIMIT);
+        const batch = db.batch();
+        chunk.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+    }
 }
 
 /**
@@ -198,42 +213,39 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
             .where('createdBy', '==', uid)
             .get();
 
-        const batch = db.batch();
+        // 2. Para cada sala creada, recopilar documentos a eliminar
+        const docsToDelete: FirebaseFirestore.QueryDocumentSnapshot[] = [];
 
-        // 2. Para cada sala creada, eliminar todos los memberships de esa sala (de cualquier usuario)
-        //    y luego eliminar la sala misma.
         for (const roomDoc of createdRoomsSnapshot.docs) {
             const roomId = roomDoc.id;
 
-            // Preparar borrado de memberships
+            // Recopilar memberships de esta sala
             const roomMembershipsSnapshot = await db
                 .collection('room_memberships')
                 .where('roomId', '==', roomId)
                 .get();
 
-            roomMembershipsSnapshot.docs.forEach((membershipDoc) => {
-                batch.delete(membershipDoc.ref);
-            });
+            docsToDelete.push(...roomMembershipsSnapshot.docs);
 
-            // Preparar borrado de la sala
-            batch.delete(roomDoc.ref);
-
-            // 3. Eliminar mensajes de esya sala inmediatamente
-            await deleteMessagesByRoomId(roomId);
+            // Agregar la sala misma
+            docsToDelete.push(roomDoc);
         }
 
-        // 4. Eliminar los memberships del usuario en salas de otros (donde no es creador)
+        // 3. Agregar los memberships del usuario en salas de otros
         const ownMembershipsSnapshot = await db
             .collection('room_memberships')
             .where('uid', '==', uid)
             .get();
 
-        ownMembershipsSnapshot.docs.forEach((membershipDoc) => {
-            batch.delete(membershipDoc.ref);
-        });
+        docsToDelete.push(...ownMembershipsSnapshot.docs);
 
-        // Ejecutamos todo el borrado de salas y membresías
-        await batch.commit();
+        // 4. Eliminar todos los documentos en lotes paginados
+        await commitBatchDeletes(docsToDelete);
+
+        // 5. Eliminar mensajes de las salas creadas por el usuario
+        for (const roomDoc of createdRoomsSnapshot.docs) {
+            await deleteMessagesByRoomId(roomDoc.id);
+        }
                
     } catch (error) {
         console.error(`Error al eliminar salas y memberships del usuario ${uid}:`, error);

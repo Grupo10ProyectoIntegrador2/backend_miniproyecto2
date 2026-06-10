@@ -13,6 +13,20 @@ export interface ChatMessage {
 
 export const MAX_MESSAGE_LENGTH = 2000;
 export const DEFAULT_HISTORY_LIMIT = 200;
+const BATCH_LIMIT = 499; // Firestore permite máx. 500 operaciones por batch
+
+/**
+ * Elimina una lista de documentos en lotes de hasta BATCH_LIMIT operaciones.
+ * Previene exceder el límite de 500 operaciones por batch de Firestore.
+ */
+async function commitBatchDeletes(docs: FirebaseFirestore.QueryDocumentSnapshot[]): Promise<void> {
+    for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
+        const chunk = docs.slice(i, i + BATCH_LIMIT);
+        const batch = db.batch();
+        chunk.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+    }
+}
 
 /**
  * Valida el contenido de un mensaje de chat.
@@ -101,7 +115,5 @@ export async function deleteMessagesByRoomId(roomId: string): Promise<void> {
         return;
     }
 
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
+    await commitBatchDeletes(snapshot.docs);
 }
