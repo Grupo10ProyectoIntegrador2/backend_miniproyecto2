@@ -41,13 +41,40 @@ function userError(res: Response, status: number, message: string) {
  *             properties:
  *               name:
  *                 type: string
- *                 description: Nombre descriptivo de la sala (mínimo 3 caracteres)
+ *                 minLength: 3
+ *                 maxLength: 50
+ *                 description: Nombre descriptivo de la sala (entre 3 y 50 caracteres)
  *                 example: Sala de Programación Web
  *     responses:
  *       201:
  *         description: Sala creada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala creada exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala recién creada
  *       400:
- *         description: Parámetros inválidos o faltantes
+ *         description: Nombre vacío, menor a 3 caracteres o mayor a 50 caracteres
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: El nombre de la sala debe tener al menos 3 caracteres.
  *       401:
  *         description: No autorizado (Token inválido o ausente)
  *       500:
@@ -105,6 +132,19 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
  *     responses:
  *       200:
  *         description: Lista de salas activas obtenida exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 rooms:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                   description: Arreglo de salas activas
  *       401:
  *         description: No autorizado (Token inválido o ausente)
  *       500:
@@ -142,15 +182,30 @@ router.get('/', requireAuth, async (_req: AuthenticatedRequest, res: Response) =
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a la que unirse
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Usuario unido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Te uniste a la sala exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala a la que se unió
  *       400:
- *         description: Datos inválidos
+ *         description: Identificador de sala vacío o sala no está activa
  *       401:
- *         description: No autorizado
+ *         description: No autorizado o usuario no identificado
  *       404:
  *         description: Sala no encontrada
  *       500:
@@ -253,15 +308,49 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala cuyo historial se desea obtener
  *         schema:
  *           type: string
  *     responses:
  *       200:
- *         description: Historial obtenido exitosamente
+ *         description: Historial obtenido exitosamente (ordenado del más antiguo al más reciente, máximo 200 mensajes)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 roomId:
+ *                   type: string
+ *                   description: ID de la sala consultada
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       roomId:
+ *                         type: string
+ *                       senderUid:
+ *                         type: string
+ *                       senderName:
+ *                         type: string
+ *                       senderUsername:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       400:
+ *         description: Identificador de sala vacío o sala no está activa
  *       401:
  *         description: No autorizado
  *       403:
- *         description: Sin acceso a la sala
+ *         description: El usuario autenticado no es miembro de la sala
  *       404:
  *         description: Sala no encontrada
  *       500:
@@ -322,6 +411,7 @@ router.get('/:roomId/messages', requireAuth, async (req: AuthenticatedRequest, r
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a editar
  *         schema:
  *           type: string
  *     requestBody:
@@ -334,13 +424,29 @@ router.get('/:roomId/messages', requireAuth, async (req: AuthenticatedRequest, r
  *             properties:
  *               name:
  *                 type: string
- *                 description: Nuevo nombre de la sala (mínimo 3 caracteres)
+ *                 minLength: 3
+ *                 maxLength: 50
+ *                 description: Nuevo nombre de la sala (entre 3 y 50 caracteres)
  *                 example: Sala de Algoritmos Avanzados
  *     responses:
  *       200:
  *         description: Sala editada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala actualizada exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala actualizada
  *       400:
- *         description: Nombre inválido o vacío
+ *         description: Nombre vacío, menor a 3 caracteres, mayor a 50, o roomId vacío
  *       401:
  *         description: No autorizado
  *       403:
@@ -405,11 +511,25 @@ router.put('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Respo
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a eliminar
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Sala eliminada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala eliminada exitosamente junto a todos sus accesos.
+ *       400:
+ *         description: Identificador de sala vacío
  *       401:
  *         description: No autorizado
  *       403:

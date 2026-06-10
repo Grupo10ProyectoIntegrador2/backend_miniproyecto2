@@ -1,10 +1,10 @@
 import swaggerJSDoc from "swagger-jsdoc";
 import path from "path";
 
-const serverUrl = process.env.SWAGGER_URL || 
-  (process.env.NODE_ENV === 'production' 
-    ? 'https://backend-miniproyecto2.onrender.com' 
-    : 'http://localhost:3000');
+const serverUrl = process.env.SWAGGER_URL ||
+    (process.env.NODE_ENV === 'production'
+        ? 'https://backend-miniproyecto2.onrender.com'
+        : 'http://localhost:3000');
 
 const options: swaggerJSDoc.Options = {
     definition: {
@@ -22,8 +22,8 @@ const options: swaggerJSDoc.Options = {
         ],
     },
     apis: [
-        path.join(__dirname, '../routes/*.js'),
-        path.join(__dirname, '../routes/*.ts'),
+        "./src/routes/*.ts",
+        "./src/routes/*.js",
     ],
 };
 
