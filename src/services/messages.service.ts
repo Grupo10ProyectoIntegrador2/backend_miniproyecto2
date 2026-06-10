@@ -85,19 +85,20 @@ export async function saveRoomMessage(roomId: string, senderUid: string, content
 }
 
 /**
- * Recupera el historial de mensajes de una sala, del más antiguo al más reciente.
+ * Recupera los últimos mensajes de una sala, retornados del más antiguo al más reciente.
+ * Se consultan en orden descendente para obtener los más recientes y luego se invierte.
  */
 export async function getRoomMessages(roomId: string, limit = DEFAULT_HISTORY_LIMIT): Promise<ChatMessage[]> {
-    // Apuntamos a la subcolección 
+    // Consultamos los últimos N mensajes (descendente) y luego invertimos
     const snapshot = await db
         .collection('rooms')
         .doc(roomId)
         .collection('messages')
-        .orderBy('createdAt', 'asc')
+        .orderBy('createdAt', 'desc')
         .limit(limit)
         .get();
 
-    return snapshot.docs.map((doc) => doc.data() as ChatMessage);
+    return snapshot.docs.map((doc) => doc.data() as ChatMessage).reverse();
 }
 
 /**
