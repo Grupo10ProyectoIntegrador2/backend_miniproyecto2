@@ -309,27 +309,20 @@ export async function deleteRoom(roomId: string, uid: string): Promise<void> {
             throw new Error('No tienes permisos para eliminar esta sala.');
         }
 
-        // Opción de borrado físico
-        const batch = db.batch();
-        
-        // 1. Borrar la sala
-        batch.delete(roomRef);
-
-        // 2. Borrar todos los participantes (memberships) de esa sala
+        // 1. Recopilar memberships a eliminar
         const membershipsSnapshot = await db
             .collection('room_memberships')
             .where('roomId', '==', roomId)
             .get();
 
-        membershipsSnapshot.docs.forEach((doc) => {
-            batch.delete(doc.ref);
-        });
+        // 2. Eliminar sala y memberships primero (datos críticos)
+        await roomRef.delete();
+        if (!membershipsSnapshot.empty) {
+            await commitBatchDeletes(membershipsSnapshot.docs);
+        }
 
-        // 3. Borrar historial de chat de la sala
+        // 3. Eliminar historial de chat después (datos secundarios)
         await deleteMessagesByRoomId(roomId);
-
-        // 4. Ejecutamos el batch para borrar la sala
-        await batch.commit();
 
     } catch (error) {
         console.error(`Error al eliminar la sala ${roomId}:`, error);
