@@ -44,9 +44,13 @@ async function assertCanAccessRoom(socket: Socket, roomId: string): Promise<stri
 }
 
 export function initSocket(httpServer: HttpServer): Server {
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+        : '*';
+
     const io = new Server(httpServer, {
         cors: {
-            origin: '*',
+            origin: allowedOrigins,
             methods: ['GET', 'POST'],
         },
     });
