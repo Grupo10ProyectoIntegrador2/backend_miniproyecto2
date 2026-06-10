@@ -4,7 +4,7 @@ import admin from 'firebase-admin';
 export interface AuthUser {
     uid: string;
     email?: string | undefined;
-    name?: string;
+    name?: string | undefined;
     [key: string]: unknown;
 }
 
@@ -33,7 +33,11 @@ export async function verifyAuthToken(token: string): Promise<AuthUser | null> {
 
     try {
         const decodedToken = await admin.auth().verifyIdToken(token);
-        return decodedToken as AuthUser;
+        return {
+            uid: decodedToken.uid,
+            email: decodedToken.email,
+            name: decodedToken.name as string | undefined,
+        };
     } catch (firebaseError: unknown) {
         const message = firebaseError instanceof Error ? firebaseError.message : 'Token inválido';
         console.error('Error verificando ID Token de Firebase:', message);

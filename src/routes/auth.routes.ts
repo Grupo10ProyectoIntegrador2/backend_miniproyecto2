@@ -194,6 +194,11 @@ router.post('/register', async (req: Request, res: Response) => {
             return userError(res, 400, 'Faltan datos obligatorios para completar el registro.');
         }
 
+        // Validar provider
+        if (provider !== 'email' && provider !== 'google') {
+            return userError(res, 400, 'El proveedor de autenticación no es válido.');
+        }
+
         // Validar nombres
         const namesValidation = validateNames(firstName, lastName);
         if (!namesValidation.valid) {
