@@ -13,10 +13,17 @@ export function initSocket(httpServer: HttpServer): Server {
         console.log(`[Socket.IO] Cliente conectado    | id: ${socket.id}`);
 
         // ── Evento: unirse a una sala ────────────────────────────────────────
-        socket.on('join-room', (roomId: string) => {
+        socket.on('join-room', (payload: { roomId: string; participant?: unknown } | string) => {
+            const roomId = typeof payload === 'string' ? payload : payload.roomId;
+            const participant = typeof payload === 'string' ? undefined : payload.participant;
+
+            if (!roomId) {
+                return;
+            }
+
             socket.join(roomId);
             console.log(`[Socket.IO] Socket ${socket.id} se unió a la sala: ${roomId}`);
-            socket.to(roomId).emit('user-joined', { socketId: socket.id });
+            io.to(roomId).emit('user-joined', { roomId, participant, socketId: socket.id });
         });
 
         // ── Evento: salir de una sala ────────────────────────────────────────

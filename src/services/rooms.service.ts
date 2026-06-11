@@ -1,4 +1,5 @@
 import { db } from '../config/firebase';
+import { getUserProfile, type UserProfile } from './validation.service';
 
 export interface Room {
     id: string;
@@ -13,6 +14,11 @@ export interface RoomMembership {
     roomId: string;
     uid: string;
     joinedAt: string;
+}
+
+export interface RoomParticipant extends UserProfile {
+    joinedAt: string;
+    role: 'Administrador' | 'Participante';
 }
 
 /**
@@ -134,6 +140,66 @@ export async function joinRoom(roomId: string, uid: string): Promise<Room> {
     } catch (error) {
         console.error(`Error al unir usuario ${uid} a la sala ${roomId}:`, error);
         throw error instanceof Error ? error : new Error('No se pudo unir a la sala.');
+    }
+}
+
+/**
+ * Obtiene los participantes de una sala junto con su perfil y fecha de ingreso.
+ *
+ * @param roomId ID de la sala
+ * @returns Lista de participantes ordenada con el creador primero
+ */
+export async function getRoomParticipantsByRoomId(roomId: string): Promise<RoomParticipant[]> {
+    try {
+        const room = await getRoomById(roomId);
+
+        if (!room) {
+            throw new Error('La sala no existe.');
+        }
+
+        const membershipsSnapshot = await db
+            .collection('room_memberships')
+            .where('roomId', '==', roomId)
+            .get();
+
+        const participants = await Promise.all(
+            membershipsSnapshot.docs.map(async (doc) => {
+                const membership = doc.data() as RoomMembership;
+                const profile = await getUserProfile(membership.uid);
+
+                const fallbackProfile: UserProfile = {
+                    uid: membership.uid,
+                    firstName: 'Usuario',
+                    lastName: 'de la sala',
+                    username: membership.uid,
+                    email: `${membership.uid}@example.edu`,
+                    avatarUrl: '',
+                    provider: 'email',
+                    createdAt: membership.joinedAt,
+                };
+
+                const user = profile ?? fallbackProfile;
+
+                const role: RoomParticipant['role'] = room.createdBy === membership.uid ? 'Administrador' : 'Participante';
+
+                return {
+                    ...user,
+                    joinedAt: membership.joinedAt,
+                    role: role,
+                };
+            })
+        );
+
+        return participants.sort((a, b) => {
+            if (a.role !== b.role) {
+                return a.role === 'Administrador' ? -1 : 1;
+            }
+
+            return new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
+        });
+    } catch (error) {
+        console.error(`Error al obtener participantes de la sala ${roomId}:`, error);
+        throw new Error('No se pudieron obtener los participantes de la sala.');
     }
 }
 

@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import type { Response } from 'express';
-import { createRoom, getAllRooms, joinRoom, getJoinedRoomsByUser } from '../services/rooms.service';
+import type { Router as ExpressRouter, Response } from 'express'
+import { createRoom, getAllRooms, getJoinedRoomsByUser, getRoomParticipantsByRoomId, joinRoom } from '../services/rooms.service';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 
-const router = Router();
+const router:ExpressRouter = Router();
 
 // Helper para respuestas de error limpias
 function userError(res: Response, status: number, message: string) {
@@ -179,6 +179,39 @@ router.post('/:roomId/join', requireAuth, async (req: AuthenticatedRequest, res:
         }
 
         console.error('Error en POST /rooms/:roomId/join:', error);
+        res.status(500).json({
+            success: false,
+            message,
+        });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /rooms/:roomId/participants - Participantes de una sala
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:roomId/participants', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        const participants = await getRoomParticipantsByRoomId(roomId);
+
+        res.json({
+            success: true,
+            participants,
+        });
+    } catch (error: any) {
+        const message = error?.message || 'No se pudieron recuperar los participantes de la sala.';
+
+        if (message === 'La sala no existe.') {
+            return userError(res, 404, message);
+        }
+
+        console.error('Error en GET /rooms/:roomId/participants:', error);
         res.status(500).json({
             success: false,
             message,
