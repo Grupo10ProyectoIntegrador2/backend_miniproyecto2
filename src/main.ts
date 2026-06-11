@@ -14,7 +14,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Middlewares ──────────────────────────────────────────────────────────────
-app.use(cors());
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : '*';
+
+app.use(cors({
+    origin: allowedOrigins,
+}));
 app.use(express.json());
 
 // ── Rutas REST ───────────────────────────────────────────────────────────────
