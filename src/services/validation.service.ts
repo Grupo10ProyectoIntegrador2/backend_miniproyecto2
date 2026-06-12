@@ -20,23 +20,24 @@ export function getAvatarUrl(email: string): string {
 // ─── Validaciones de formato ───────────────────────────────────────────────
 
 export function validateUsername(username: string): { valid: boolean; error?: string } {
-    if (!username || username.trim().length === 0) {
+    const trimmed = username?.trim() ?? '';
+    if (trimmed.length === 0) {
         return { valid: false, error: 'El nombre de usuario no puede estar vacío.' };
     }
 
-    if (username.length < 3) {
+    if (trimmed.length < 3) {
         return { valid: false, error: 'El nombre de usuario debe tener al menos 3 caracteres.' };
     }
 
-    if (username.length > 30) {
+    if (trimmed.length > 30) {
         return { valid: false, error: 'El nombre de usuario no puede superar los 30 caracteres.' };
     }
 
-    if (/^(\d)\1+$/.test(username)) {
+    if (/^(\d)\1+$/.test(trimmed)) {
         return { valid: false, error: 'El nombre de usuario no puede ser solo números repetidos.' };
     }
 
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
         return { valid: false, error: 'El nombre de usuario solo puede contener letras, números, guiones y guiones bajos.' };
     }
 

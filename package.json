@@ -1,7 +1,7 @@
 {
   "name": "backend_miniproyecto2",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/main.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc",

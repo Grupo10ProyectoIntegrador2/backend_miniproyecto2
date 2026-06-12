@@ -1,16 +1,20 @@
 import { Router } from 'express';
-import type { Response } from 'express';
-import { 
-    createRoom, 
-    getAllRooms, 
-    joinRoom, 
+import type { Router as ExpressRouter, Response } from 'express';
+import {
+    createRoom,
+    getAllRooms,
+    joinRoom,
     getJoinedRoomsByUser,
     updateRoomName,
-    deleteRoom
+    deleteRoom,
+    getRoomById,
+    isRoomMember,
+    getRoomParticipantsByRoomId,
 } from '../services/rooms.service';
+import { getRoomMessages } from '../services/messages.service';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 
-const router = Router();
+const router:ExpressRouter = Router();
 
 // Helper para respuestas de error limpias
 function userError(res: Response, status: number, message: string) {
@@ -38,13 +42,40 @@ function userError(res: Response, status: number, message: string) {
  *             properties:
  *               name:
  *                 type: string
- *                 description: Nombre descriptivo de la sala (mínimo 3 caracteres)
+ *                 minLength: 3
+ *                 maxLength: 50
+ *                 description: Nombre descriptivo de la sala (entre 3 y 50 caracteres)
  *                 example: Sala de Programación Web
  *     responses:
  *       201:
  *         description: Sala creada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala creada exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala recién creada
  *       400:
- *         description: Parámetros inválidos o faltantes
+ *         description: Nombre vacío, menor a 3 caracteres o mayor a 50 caracteres
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: El nombre de la sala debe tener al menos 3 caracteres.
  *       401:
  *         description: No autorizado (Token inválido o ausente)
  *       500:
@@ -79,11 +110,12 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
             message: 'Sala creada exitosamente.',
             room: newRoom,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en POST /rooms:', error);
+        const message = error instanceof Error ? error.message : 'Ocurrió un problema al crear la sala. Intenta de nuevo más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'Ocurrió un problema al crear la sala. Intenta de nuevo más tarde.',
+            message,
         });
     }
 });
@@ -102,6 +134,19 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
  *     responses:
  *       200:
  *         description: Lista de salas activas obtenida exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 rooms:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                   description: Arreglo de salas activas
  *       401:
  *         description: No autorizado (Token inválido o ausente)
  *       500:
@@ -115,11 +160,12 @@ router.get('/', requireAuth, async (_req: AuthenticatedRequest, res: Response) =
             success: true,
             rooms: activeRooms,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en GET /rooms:', error);
+        const message = error instanceof Error ? error.message : 'No se pudieron recuperar las salas en este momento. Intenta más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'No se pudieron recuperar las salas en este momento. Intenta más tarde.',
+            message,
         });
     }
 });
@@ -139,15 +185,30 @@ router.get('/', requireAuth, async (_req: AuthenticatedRequest, res: Response) =
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a la que unirse
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Usuario unido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Te uniste a la sala exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala a la que se unió
  *       400:
- *         description: Datos inválidos
+ *         description: Identificador de sala vacío o sala no está activa
  *       401:
- *         description: No autorizado
+ *         description: No autorizado o usuario no identificado
  *       404:
  *         description: Sala no encontrada
  *       500:
@@ -174,8 +235,8 @@ router.post('/:roomId/join', requireAuth, async (req: AuthenticatedRequest, res:
             message: 'Te uniste a la sala exitosamente.',
             room,
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo unir a la sala. Intenta nuevamente.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo unir a la sala. Intenta nuevamente.';
 
         if (message === 'La sala no existe.') {
             return userError(res, 404, message);
@@ -186,6 +247,39 @@ router.post('/:roomId/join', requireAuth, async (req: AuthenticatedRequest, res:
         }
 
         console.error('Error en POST /rooms/:roomId/join:', error);
+        res.status(500).json({
+            success: false,
+            message,
+        });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /rooms/:roomId/participants - Participantes de una sala
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:roomId/participants', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        const participants = await getRoomParticipantsByRoomId(roomId);
+
+        res.json({
+            success: true,
+            participants,
+        });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudieron recuperar los participantes de la sala.';
+
+        if (message === 'La sala no existe.') {
+            return userError(res, 404, message);
+        }
+
+        console.error('Error en GET /rooms/:roomId/participants:', error);
         res.status(500).json({
             success: false,
             message,
@@ -226,12 +320,116 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
             success: true,
             rooms,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error en GET /rooms/joined:', error);
+        const message = error instanceof Error ? error.message : 'No se pudieron recuperar tus salas. Intenta más tarde.';
         res.status(500).json({
             success: false,
-            message: error.message || 'No se pudieron recuperar tus salas. Intenta más tarde.',
+            message,
         });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /rooms/:roomId/messages - Historial de chat de una sala
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /rooms/{roomId}/messages:
+ *   get:
+ *     summary: Obtiene el historial de mensajes de una sala (Requiere ser miembro)
+ *     tags: [Salas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         description: Identificador único de la sala cuyo historial se desea obtener
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Historial obtenido exitosamente (ordenado del más antiguo al más reciente, máximo 200 mensajes)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 roomId:
+ *                   type: string
+ *                   description: ID de la sala consultada
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       roomId:
+ *                         type: string
+ *                       senderUid:
+ *                         type: string
+ *                       senderName:
+ *                         type: string
+ *                       senderUsername:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       400:
+ *         description: Identificador de sala vacío o sala no está activa
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: El usuario autenticado no es miembro de la sala
+ *       404:
+ *         description: Sala no encontrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get('/:roomId/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+        const uid = req.user!.uid;
+
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        const trimmedRoomId = roomId.trim();
+        const room = await getRoomById(trimmedRoomId);
+
+        if (!room) {
+            return userError(res, 404, 'La sala no existe.');
+        }
+
+        if (room.status !== 'active') {
+            return userError(res, 400, 'La sala no está activa.');
+        }
+
+        const isMember = await isRoomMember(trimmedRoomId, uid);
+        if (!isMember) {
+            return userError(res, 403, 'No tienes acceso al chat de esta sala.');
+        }
+
+        const messages = await getRoomMessages(trimmedRoomId);
+
+        res.json({
+            success: true,
+            roomId: trimmedRoomId,
+            messages,
+        });
+    } catch (error: unknown) {
+        console.error('Error en GET /rooms/:roomId/messages:', error);
+        const message = error instanceof Error ? error.message : 'No se pudo obtener el historial de chat.';
+        res.status(500).json({ success: false, message });
     }
 });
 
@@ -250,6 +448,7 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a editar
  *         schema:
  *           type: string
  *     requestBody:
@@ -262,13 +461,29 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
  *             properties:
  *               name:
  *                 type: string
- *                 description: Nuevo nombre de la sala (mínimo 3 caracteres)
+ *                 minLength: 3
+ *                 maxLength: 50
+ *                 description: Nuevo nombre de la sala (entre 3 y 50 caracteres)
  *                 example: Sala de Algoritmos Avanzados
  *     responses:
  *       200:
  *         description: Sala editada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala actualizada exitosamente.
+ *                 room:
+ *                   type: object
+ *                   description: Datos de la sala actualizada
  *       400:
- *         description: Nombre inválido o vacío
+ *         description: Nombre vacío, menor a 3 caracteres, mayor a 50, o roomId vacío
  *       401:
  *         description: No autorizado
  *       403:
@@ -307,8 +522,8 @@ router.put('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Respo
             message: 'Sala actualizada exitosamente.',
             room: updatedRoom,
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo editar la sala.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo editar la sala.';
 
         if (message === 'La sala no existe.') return userError(res, 404, message);
         if (message === 'No tienes permisos para editar esta sala.') return userError(res, 403, message);
@@ -333,11 +548,25 @@ router.put('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Respo
  *       - in: path
  *         name: roomId
  *         required: true
+ *         description: Identificador único de la sala a eliminar
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Sala eliminada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Sala eliminada exitosamente junto a todos sus accesos.
+ *       400:
+ *         description: Identificador de sala vacío
  *       401:
  *         description: No autorizado
  *       403:
@@ -364,8 +593,8 @@ router.delete('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Re
             success: true,
             message: 'Sala eliminada exitosamente junto a todos sus accesos.',
         });
-    } catch (error: any) {
-        const message = error?.message || 'No se pudo eliminar la sala.';
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'No se pudo eliminar la sala.';
 
         if (message === 'La sala no existe.') return userError(res, 404, message);
         if (message === 'No tienes permisos para eliminar esta sala.') return userError(res, 403, message);
