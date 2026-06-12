@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import type { Response } from 'express';
-import { createRoom, getAllRooms, joinRoom, getJoinedRoomsByUser } from '../services/rooms.service';
+import { 
+    createRoom, 
+    getAllRooms, 
+    joinRoom, 
+    getJoinedRoomsByUser,
+    updateRoomName,
+    deleteRoom
+} from '../services/rooms.service';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -228,4 +235,143 @@ router.get('/joined', requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /rooms/:roomId - Editar el nombre de una sala
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /rooms/{roomId}:
+ *   put:
+ *     summary: Edita el nombre de una sala (Solo el Anfitrión)
+ *     tags: [Salas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Nuevo nombre de la sala (mínimo 3 caracteres)
+ *                 example: Sala de Algoritmos Avanzados
+ *     responses:
+ *       200:
+ *         description: Sala editada exitosamente
+ *       400:
+ *         description: Nombre inválido o vacío
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Prohibido (El usuario no es el creador de la sala)
+ *       404:
+ *         description: Sala no encontrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.put('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+        const { name } = req.body;
+        const uid = req.user!.uid;
+
+        // Asegurar que el roomId sea válido y de tipo string puro
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        // Validaciones idénticas a la creación
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
+            return userError(res, 400, 'El nuevo nombre de la sala es obligatorio.');
+        }
+
+        const trimmedName = name.trim();
+        if (trimmedName.length < 3 || trimmedName.length > 50) {
+            return userError(res, 400, 'El nombre debe tener entre 3 y 50 caracteres.');
+        }
+
+        const updatedRoom = await updateRoomName(roomId, trimmedName, uid);
+
+        res.json({
+            success: true,
+            message: 'Sala actualizada exitosamente.',
+            room: updatedRoom,
+        });
+    } catch (error: any) {
+        const message = error?.message || 'No se pudo editar la sala.';
+
+        if (message === 'La sala no existe.') return userError(res, 404, message);
+        if (message === 'No tienes permisos para editar esta sala.') return userError(res, 403, message);
+
+        console.error('Error en PUT /rooms/:roomId:', error);
+        res.status(500).json({ success: false, message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /rooms/:roomId - Eliminar una sala
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @swagger
+ * /rooms/{roomId}:
+ *   delete:
+ *     summary: Elimina una sala y todos sus accesos (Solo el Anfitrión)
+ *     tags: [Salas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: roomId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Sala eliminada exitosamente
+ *       401:
+ *         description: No autorizado
+ *       403:
+ *         description: Prohibido (El usuario no es el creador de la sala)
+ *       404:
+ *         description: Sala no encontrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.delete('/:roomId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const roomIdParam = req.params['roomId'];
+        const roomId = Array.isArray(roomIdParam) ? roomIdParam[0] : roomIdParam;
+        const uid = req.user!.uid;
+
+        // Asegurar que el roomId sea válido y de tipo string puro
+        if (!roomId || roomId.trim().length === 0) {
+            return userError(res, 400, 'El identificador de la sala es obligatorio.');
+        }
+
+        await deleteRoom(roomId, uid);
+
+        res.json({
+            success: true,
+            message: 'Sala eliminada exitosamente junto a todos sus accesos.',
+        });
+    } catch (error: any) {
+        const message = error?.message || 'No se pudo eliminar la sala.';
+
+        if (message === 'La sala no existe.') return userError(res, 404, message);
+        if (message === 'No tienes permisos para eliminar esta sala.') return userError(res, 403, message);
+
+        console.error('Error en DELETE /rooms/:roomId:', error);
+        res.status(500).json({ success: false, message });
+    }
+});
 export default router;

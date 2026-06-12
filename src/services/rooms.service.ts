@@ -218,3 +218,83 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
         throw new Error('No se pudieron eliminar las salas del usuario. Intenta de nuevo más tarde.');
     }
 }
+
+/**
+ * Edita el nombre de una sala existente.
+ * Valida que el usuario que intenta editar sea el creador original.
+ * @param roomId ID de la sala a editar
+ * @param newName Nuevo nombre de la sala
+ * @param uid UID del usuario que realiza la petición
+ * @returns La sala actualizada
+ */
+export async function updateRoomName(roomId: string, newName: string, uid: string): Promise<Room> {
+    try {
+        const roomRef = db.collection('rooms').doc(roomId);
+        const roomDoc = await roomRef.get();
+
+        if (!roomDoc.exists) {
+            throw new Error('La sala no existe.');
+        }
+
+        const roomData = roomDoc.data() as Room;
+
+        // Validación de seguridad 
+        if (roomData.createdBy !== uid) {
+            throw new Error('No tienes permisos para editar esta sala.');
+        }
+
+        const trimmedName = newName.trim();
+        await roomRef.update({ name: trimmedName });
+
+        return { ...roomData, name: trimmedName };
+    } catch (error) {
+        console.error(`Error al editar la sala ${roomId}:`, error);
+        throw error instanceof Error ? error : new Error('No se pudo editar la sala.');
+    }
+}
+
+/**
+ * Elimina (desactiva) una sala existente de forma lógica o física.
+ * Valida que el usuario que intenta eliminar sea el creador original.
+ * @param roomId ID de la sala a eliminar
+ * @param uid UID del usuario que realiza la petición
+ */
+export async function deleteRoom(roomId: string, uid: string): Promise<void> {
+    try {
+        const roomRef = db.collection('rooms').doc(roomId);
+        const roomDoc = await roomRef.get();
+
+        if (!roomDoc.exists) {
+            throw new Error('La sala no existe.');
+        }
+
+        const roomData = roomDoc.data() as Room;
+
+        // Validación de seguridad 
+        if (roomData.createdBy !== uid) {
+            throw new Error('No tienes permisos para eliminar esta sala.');
+        }
+
+        // Opción de borrado físico
+        const batch = db.batch();
+        
+        // 1. Borrar la sala
+        batch.delete(roomRef);
+
+        // 2. Borrar todos los participantes (memberships) de esa sala
+        const membershipsSnapshot = await db
+            .collection('room_memberships')
+            .where('roomId', '==', roomId)
+            .get();
+
+        membershipsSnapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+    } catch (error) {
+        console.error(`Error al eliminar la sala ${roomId}:`, error);
+        throw error instanceof Error ? error : new Error('No se pudo eliminar la sala.');
+    }
+}
