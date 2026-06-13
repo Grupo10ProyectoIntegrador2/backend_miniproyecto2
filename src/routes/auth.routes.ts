@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import type { Router as ExpressRouter, Request, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth.middleware';
 import {
     checkUsernameExists,
@@ -14,7 +14,7 @@ import {
     getAvatarUrl,
 } from '../services/validation.service';
 
-const router = Router();
+const router: ExpressRouter = Router();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -192,6 +192,11 @@ router.post('/register', async (req: Request, res: Response) => {
         // Campos obligatorios
         if (!uid || !firstName || !lastName || !username || !email || !provider) {
             return userError(res, 400, 'Faltan datos obligatorios para completar el registro.');
+        }
+
+        // Validar provider
+        if (provider !== 'email' && provider !== 'google') {
+            return userError(res, 400, 'El proveedor de autenticación no es válido.');
         }
 
         // Validar nombres

@@ -1,0 +1,120 @@
+import { db } from '../config/firebase';
+import { getUserProfile } from './validation.service';
+
+export interface ChatMessage {
+    id: string;
+    roomId: string;
+    senderUid: string;
+    senderName: string;
+    senderUsername: string;
+    content: string;
+    createdAt: string;
+}
+
+export const MAX_MESSAGE_LENGTH = 2000;
+export const DEFAULT_HISTORY_LIMIT = 200;
+const BATCH_LIMIT = 499; // Firestore permite máx. 500 operaciones por batch
+
+/**
+ * Elimina una lista de documentos en lotes de hasta BATCH_LIMIT operaciones.
+ * Previene exceder el límite de 500 operaciones por batch de Firestore.
+ */
+async function commitBatchDeletes(docs: FirebaseFirestore.QueryDocumentSnapshot[]): Promise<void> {
+    for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
+        const chunk = docs.slice(i, i + BATCH_LIMIT);
+        const batch = db.batch();
+        chunk.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+    }
+}
+
+/**
+ * Valida el contenido de un mensaje de chat.
+ * Rechaza vacíos, solo espacios o demasiado largos.
+ */
+export function validateMessageContent(content: string): { valid: true; trimmed: string } | { valid: false; error: string } {
+    if (typeof content !== 'string') {
+        return { valid: false, error: 'El mensaje debe ser texto.' };
+    }
+
+    const trimmed = content.trim();
+
+    if (trimmed.length === 0) {
+        return { valid: false, error: 'El mensaje no puede estar vacío.' };
+    }
+
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+        return {
+            valid: false,
+            error: `El mensaje no puede superar los ${MAX_MESSAGE_LENGTH} caracteres.`,
+        };
+    }
+
+    return { valid: true, trimmed };
+}
+
+/**
+ * Guarda un mensaje en Firestore y lo retorna con metadatos del remitente.
+ */
+export async function saveRoomMessage(roomId: string, senderUid: string, content: string): Promise<ChatMessage> {
+    const validation = validateMessageContent(content);
+    if (!validation.valid) {
+        throw new Error(validation.error);
+    }
+
+    const profile = await getUserProfile(senderUid);
+    const senderName = profile
+        ? `${profile.firstName} ${profile.lastName}`.trim()
+        : 'Participante';
+    const senderUsername = profile?.username ?? senderUid;
+
+    // Usamos subcolección
+    const messageRef = db.collection('rooms').doc(roomId).collection('messages').doc();
+    const message: ChatMessage = {
+        id: messageRef.id,
+        roomId,
+        senderUid,
+        senderName,
+        senderUsername,
+        content: validation.trimmed,
+        createdAt: new Date().toISOString(),
+    };
+
+    await messageRef.set(message);
+    return message;
+}
+
+/**
+ * Recupera los últimos mensajes de una sala, retornados del más antiguo al más reciente.
+ * Se consultan en orden descendente para obtener los más recientes y luego se invierte.
+ */
+export async function getRoomMessages(roomId: string, limit = DEFAULT_HISTORY_LIMIT): Promise<ChatMessage[]> {
+    // Consultamos los últimos N mensajes (descendente) y luego invertimos
+    const snapshot = await db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('messages')
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .get();
+
+    return snapshot.docs.map((doc) => doc.data() as ChatMessage).reverse();
+}
+
+/**
+ * Elimina todos los mensajes asociados a una sala.
+ */
+export async function deleteMessagesByRoomId(roomId: string): Promise<void> {
+    // Obtenemos todos los documentos de la subcolección
+    const snapshot = await db
+        .collection('rooms')
+        .doc(roomId)
+        .collection('messages')
+        .get();
+
+    if (snapshot.empty) {
+        return;
+    }
+
+    await commitBatchDeletes(snapshot.docs);
+}
