@@ -148,7 +148,14 @@ export function initSocket(httpServer: HttpServer): Server {
         });
 
         // ── Evento: desconexión ──────────────────────────────────────────────
-        socket.on('disconnect', (reason: string) => {
+        // 'disconnecting' fires BEFORE the socket leaves its rooms,
+        // so we can still broadcast to room members.
+        socket.on('disconnecting', (reason: string) => {
+            socket.rooms.forEach(room => {
+                if (room !== socket.id) {
+                    socket.to(room).emit('user-left', { socketId: socket.id, uid });
+                }
+            });
             console.log(`[Socket.IO] Cliente desconectado | id: ${socket.id} | razón: ${reason}`);
         });
 
