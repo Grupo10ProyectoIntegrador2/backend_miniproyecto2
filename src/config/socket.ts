@@ -154,7 +154,7 @@ export function initSocket(httpServer: HttpServer): Server {
 
         // ── Evento: Answer ──────────────────────────────────────────────
         socket.on('offer', (payload: { targetSocketId: string, offer: any }) => {  
-            try{
+            try {
                 if (!payload || !payload.targetSocketId || !payload.offer) return;
 
                 socket.to(payload.targetSocketId).emit('offer', {
@@ -166,6 +166,23 @@ export function initSocket(httpServer: HttpServer): Server {
             console.error(`[WebRTC] Error procesando offer: `, error);
         }
         });
+
+        // ── Evento: Answer ──────────────────────────────────────────────
+        socket.on('answer', (payload: { targetSocketId: string, answer: any}) => {
+            try {
+                if (!payload || !payload.targetSocketId || !payload.answer) return;
+
+                socket.to(payload.targetSocketId).emit('answer', {
+                    senderSocketId: socket.id,
+                    answer: payload.answer
+                });
+                console.log(`[WebRTC] Respuesta: ${socket.id} -> ${payload.targetSocketId}`);
+            } catch (error) {
+                console.log(`[WebRTC] Error procesando answer: `, error);
+            }
+        });
+
+        // ── Evento: ice-candidate ──────────────────────────────────────────────
     });
 
     return io;
