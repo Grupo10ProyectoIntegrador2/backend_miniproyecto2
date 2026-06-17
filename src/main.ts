@@ -12,7 +12,6 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const httpServer = http.createServer(app);
 
 // ── Middlewares ──────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -36,13 +35,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 // ── Servidor HTTP + Socket.IO ────────────────────────────────────────────────
 const server = http.createServer(app);
 initSocket(server);
-initSocket(httpServer);
 
 server.listen(PORT, () => {
     console.log(`Servidor corriendo en puerto ${PORT}`);
     console.log(`[Socket.IO] Esperando conexiones en puerto ${PORT}`);
 });
-
-httpServer.listen(PORT, () => {
-    console.log(`Servidor corriendo en puerto ${PORT}`);
-})
