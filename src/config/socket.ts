@@ -191,7 +191,7 @@ export function initSocket(httpServer: HttpServer): Server {
                     senderSocketId: socket.id,
                     candidate: payload.candidate
                 });
-                console.log(`[WebRTC] Respuesta: ${socket.id} -> ${payload.targetSocketId}`);
+                console.log(`[WebRTC] ICE Candidate: ${socket.id} -> ${payload.targetSocketId}`);
             } catch (error) {
                 console.log(`[WebRTC] Error procesando ice-candidate`, error);
             }
