@@ -152,7 +152,7 @@ export function initSocket(httpServer: HttpServer): Server {
             console.log(`[Socket.IO] Cliente desconectado | id: ${socket.id} | razón: ${reason}`);
         });
 
-        // ── Evento: Answer ──────────────────────────────────────────────
+        // ── Evento: Offer ──────────────────────────────────────────────
         socket.on('offer', (payload: { targetSocketId: string, offer: any }) => {  
             try {
                 if (!payload || !payload.targetSocketId || !payload.offer) return;
@@ -183,6 +183,19 @@ export function initSocket(httpServer: HttpServer): Server {
         });
 
         // ── Evento: ice-candidate ──────────────────────────────────────────────
+        socket.on('ice-candidate', (payload: { targetSocketId: string, candidate: any}) => {
+            try {
+                if (!payload || !payload.targetSocketId || !payload.candidate) return;
+
+                socket.to(payload.targetSocketId).emit('candidate', {
+                    senderSocketId: socket.id,
+                    candidate: payload.candidate
+                });
+                console.log(`[WebRTC] Respuesta: ${socket.id} -> ${payload.targetSocketId}`);
+            } catch (error) {
+                console.log(`[WebRTC] Error procesando ice-candidate`, error);
+            }
+        })
     });
 
     return io;
