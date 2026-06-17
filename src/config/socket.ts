@@ -151,6 +151,21 @@ export function initSocket(httpServer: HttpServer): Server {
         socket.on('disconnect', (reason: string) => {
             console.log(`[Socket.IO] Cliente desconectado | id: ${socket.id} | razón: ${reason}`);
         });
+
+        // ── Evento: Answer ──────────────────────────────────────────────
+        socket.on('offer', (payload: { targetSocketId: string, offer: any }) => {  
+            try{
+                if (!payload || !payload.targetSocketId || !payload.offer) return;
+
+                socket.to(payload.targetSocketId).emit('offer', {
+                    senderSocketId: socket.id,
+                    offer: payload.offer
+            });
+            console.log(`[WebRTC] Oferta: ${socket.id} -> ${payload.targetSocketId}`);
+        } catch (error) {
+            console.error(`[WebRTC] Error procesando offer: `, error);
+        }
+        });
     });
 
     return io;
