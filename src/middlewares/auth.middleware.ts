@@ -8,21 +8,16 @@ export interface AuthUser {
     [key: string]: unknown;
 }
 
-// Extendemos la interfaz Request de Express para incluir al usuario autenticado
 export interface AuthenticatedRequest extends Request {
     user?: AuthUser;
 }
 
-/**
- * Verifica un token Bearer (Firebase o mock en desarrollo).
- * Retorna null si el token es inválido.
- */
 export async function verifyAuthToken(token: string): Promise<AuthUser | null> {
     if (!token) {
         return null;
     }
 
-    if (process.env.NODE_ENV !== 'production' && token.startsWith('mock-')) {
+    if (process.env.NODE_ENV === 'development' && token.startsWith('mock-')) {
         const mockUid = token.replace('mock-', '');
         return {
             uid: mockUid,
@@ -45,10 +40,6 @@ export async function verifyAuthToken(token: string): Promise<AuthUser | null> {
     }
 }
 
-/**
- * Middleware que exige que la petición incluya un token de autenticación válido.
- * Soporta tokens JWT reales de Firebase y tokens mock en entorno de desarrollo.
- */
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
         const authHeader = req.headers.authorization;

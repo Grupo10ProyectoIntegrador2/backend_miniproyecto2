@@ -16,19 +16,10 @@ import {
 
 const router: ExpressRouter = Router();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Responde con un error amigable (nunca expone detalles técnicos). */
 function userError(res: Response, status: number, message: string) {
     return res.status(status).json({ success: false, message });
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /auth/check-username
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/check-username:
@@ -83,10 +74,6 @@ router.post('/check-username', async (req: Request, res: Response) => {
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /auth/check-email
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/check-email:
@@ -142,26 +129,22 @@ router.post('/check-email', async (req: Request, res: Response) => {
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /auth/register
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/register:
  *   post:
- *     summary: Registra un nuevo usuario con email y contraseña
+ *     summary: Registra un nuevo usuario con email y contraseña (Requiere Autenticación)
  *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [uid, firstName, lastName, username, email, provider]
+ *             required: [firstName, lastName, username, email, provider]
  *             properties:
- *               uid:
- *                 type: string
  *               firstName:
  *                 type: string
  *               lastName:
@@ -182,42 +165,44 @@ router.post('/check-email', async (req: Request, res: Response) => {
  *         description: Usuario registrado exitosamente
  *       400:
  *         description: Datos inválidos o duplicados
+ *       401:
+ *         description: No autorizado
  *       500:
  *         description: Error del servidor
  */
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const { uid, firstName, lastName, username, email, avatarUrl, provider } = req.body;
+        const uid = req.user!.uid;
+        const { firstName, lastName, username, email, avatarUrl, provider } = req.body;
 
-        // Campos obligatorios
-        if (!uid || !firstName || !lastName || !username || !email || !provider) {
+        if (!firstName || !lastName || !username || !email || !provider) {
             return userError(res, 400, 'Faltan datos obligatorios para completar el registro.');
         }
 
-        // Validar provider
         if (provider !== 'email' && provider !== 'google') {
             return userError(res, 400, 'El proveedor de autenticación no es válido.');
         }
 
-        // Validar nombres
+        const existingProfile = await getUserProfile(uid);
+        if (existingProfile) {
+            return userError(res, 400, 'Ya existe un perfil registrado para este usuario.');
+        }
+
         const namesValidation = validateNames(firstName, lastName);
         if (!namesValidation.valid) {
             return userError(res, 400, namesValidation.error!);
         }
 
-        // Validar username
         const usernameValidation = validateUsername(username);
         if (!usernameValidation.valid) {
             return userError(res, 400, usernameValidation.error!);
         }
 
-        // Validar email (incluye restricción .edu)
         const emailValidation = validateEmail(email);
         if (!emailValidation.valid) {
             return userError(res, 400, emailValidation.error!);
         }
 
-        // Verificar duplicados
         const [usernameExists, emailExists] = await Promise.all([
             checkUsernameExists(username),
             checkEmailExists(email),
@@ -231,7 +216,6 @@ router.post('/register', async (req: Request, res: Response) => {
             return userError(res, 400, 'Ese correo ya está registrado. ¿Ya tienes cuenta? Inicia sesión.');
         }
 
-        // Avatar: si el frontend no envía uno, generarlo con Gravatar a partir del email
         const resolvedAvatarUrl = avatarUrl && avatarUrl.trim() !== ''
             ? avatarUrl
             : getAvatarUrl(email);
@@ -258,43 +242,35 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /auth/login
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/login:
  *   post:
- *     summary: Inicia sesión y retorna el perfil del usuario
+ *     summary: Inicia sesión y retorna el perfil del usuario (Requiere Autenticación)
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [uid]
- *             properties:
- *               uid:
- *                 type: string
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Perfil del usuario (o null si no existe)
- *       400:
- *         description: UID requerido
+ *       401:
+ *         description: No autorizado
  *       500:
  *         description: Error del servidor
  */
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const { uid } = req.body;
-
-        if (!uid) {
-            return userError(res, 400, 'No se recibió la información de sesión. Intenta iniciar sesión de nuevo.');
-        }
+        const uid = req.user!.uid;
+        const { avatarUrl } = req.body;
 
         const userProfile = await getUserProfile(uid);
+
+        if (userProfile && avatarUrl && avatarUrl.trim() !== '') {
+            if (userProfile.avatarUrl !== avatarUrl) {
+                await updateUserProfile(uid, { avatarUrl });
+                userProfile.avatarUrl = avatarUrl;
+            }
+        }
 
         res.json({
             success: true,
@@ -309,26 +285,22 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /auth/complete-profile  (registro Google → completar username)
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/complete-profile:
  *   post:
- *     summary: Completa el perfil de un usuario tras registrarse con Google
+ *     summary: Completa el perfil de un usuario tras registrarse con Google (Requiere Autenticación)
  *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [uid, username, firstName, lastName, email]
+ *             required: [username, firstName, lastName, email]
  *             properties:
- *               uid:
- *                 type: string
  *               username:
  *                 type: string
  *               firstName:
@@ -346,30 +318,35 @@ router.post('/login', async (req: Request, res: Response) => {
  *         description: Perfil completado exitosamente
  *       400:
  *         description: Datos inválidos o username duplicado
+ *       401:
+ *         description: No autorizado
  *       500:
  *         description: Error del servidor
  */
-router.post('/complete-profile', async (req: Request, res: Response) => {
+router.post('/complete-profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
     try {
-        const { uid, username, firstName, lastName, email, avatarUrl } = req.body;
+        const uid = req.user!.uid;
+        const { username, firstName, lastName, email, avatarUrl } = req.body;
 
-        if (!uid || !username || !firstName || !lastName || !email) {
+        if (!username || !firstName || !lastName || !email) {
             return userError(res, 400, 'Faltan datos obligatorios para completar tu perfil.');
         }
 
-        // Validar nombres
+        const existingProfile = await getUserProfile(uid);
+        if (existingProfile) {
+            return userError(res, 400, 'Ya existe un perfil registrado para este usuario.');
+        }
+
         const namesValidation = validateNames(firstName, lastName);
         if (!namesValidation.valid) {
             return userError(res, 400, namesValidation.error!);
         }
 
-        // Validar username
         const usernameValidation = validateUsername(username);
         if (!usernameValidation.valid) {
             return userError(res, 400, usernameValidation.error!);
         }
 
-        // Validar email (incluye restricción .edu)
         const emailValidation = validateEmail(email);
         if (!emailValidation.valid) {
             return userError(res, 400, emailValidation.error!);
@@ -380,7 +357,6 @@ router.post('/complete-profile', async (req: Request, res: Response) => {
             return userError(res, 400, 'Ese nombre de usuario ya está en uso. Por favor elige otro.');
         }
 
-        // Avatar: preferir la foto de Google; si no viene, usar Gravatar
         const resolvedAvatarUrl = avatarUrl && avatarUrl.trim() !== ''
             ? avatarUrl
             : getAvatarUrl(email);
@@ -407,10 +383,6 @@ router.post('/complete-profile', async (req: Request, res: Response) => {
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /auth/profile/:uid   – Ver perfil
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/profile/{uid}:
@@ -455,10 +427,6 @@ router.get('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /auth/profile/:uid   – Editar perfil
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/profile/{uid}:
@@ -501,7 +469,6 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
         const uid = req.params['uid'] as string;
         const { firstName, lastName, username, avatarUrl, email } = req.body;
 
-        // Control de acceso: solo el dueño del perfil puede modificarlo
         if (req.user!.uid !== uid) {
             return res.status(403).json({
                 success: false,
@@ -509,8 +476,6 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             });
         }
 
-
-        // Verificar que el perfil existe
         const existing = await getUserProfile(uid);
         if (!existing) {
             return res.status(404).json({
@@ -519,12 +484,10 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             });
         }
 
-        // Los usuarios de Google no pueden cambiar su correo
         if (email !== undefined && existing.provider === 'google') {
             return userError(res, 400, 'El correo electrónico no se puede modificar para cuentas de Google.');
         }
 
-        // Validar y verificar disponibilidad del email si cambió (solo para cuentas normales)
         if (email !== undefined && email.toLowerCase() !== existing.email) {
             const emailValidation = validateEmail(email);
             if (!emailValidation.valid) {
@@ -537,19 +500,16 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
             }
         }
 
-
-        // Validar nombres si se envían
         if (firstName !== undefined || lastName !== undefined) {
             const namesValidation = validateNames(
                 firstName ?? existing.firstName,
-                lastName  ?? existing.lastName
+                lastName ?? existing.lastName
             );
             if (!namesValidation.valid) {
                 return userError(res, 400, namesValidation.error!);
             }
         }
 
-        // Validar y verificar disponibilidad del username si cambió
         if (username !== undefined && username.toLowerCase() !== existing.username) {
             const usernameValidation = validateUsername(username);
             if (!usernameValidation.valid) {
@@ -577,10 +537,6 @@ router.put('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, res: 
     }
 });
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /auth/profile/:uid   – Eliminar cuenta
-// ─────────────────────────────────────────────────────────────────────────────
 /**
  * @swagger
  * /auth/profile/{uid}:
@@ -605,7 +561,6 @@ router.delete('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, re
     try {
         const uid = req.params['uid'] as string;
 
-        // Control de acceso: solo el dueño de la cuenta puede eliminarla
         if (req.user!.uid !== uid) {
             return res.status(403).json({
                 success: false,
@@ -613,7 +568,6 @@ router.delete('/profile/:uid', requireAuth, async (req: AuthenticatedRequest, re
             });
         }
 
-        // Verificar que el perfil existe antes de eliminar
         const existing = await getUserProfile(uid);
         if (!existing) {
             return res.status(404).json({
