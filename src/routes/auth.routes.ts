@@ -288,13 +288,20 @@ router.post('/register', async (req: Request, res: Response) => {
  */
 router.post('/login', async (req: Request, res: Response) => {
     try {
-        const { uid } = req.body;
+        const { uid, avatarUrl } = req.body;
 
         if (!uid) {
             return userError(res, 400, 'No se recibió la información de sesión. Intenta iniciar sesión de nuevo.');
         }
 
         const userProfile = await getUserProfile(uid);
+
+        if (userProfile && avatarUrl && avatarUrl.trim() !== '') {
+            if (userProfile.avatarUrl !== avatarUrl) {
+                await updateUserProfile(uid, { avatarUrl });
+                userProfile.avatarUrl = avatarUrl;
+            }
+        }
 
         res.json({
             success: true,
