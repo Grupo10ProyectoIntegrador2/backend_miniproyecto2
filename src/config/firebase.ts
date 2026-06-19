@@ -11,14 +11,12 @@ if (!projectId) {
   throw new Error('FIREBASE_PROJECT_ID no está definido');
 }
 
-let credential: admin.ServiceAccount | admin.credential.Credential;
+let credential: admin.credential.Credential;
 
-// Intenta leer del archivo JSON primero (desarrollo local)
 const credPath = path.join(__dirname, '../../firebase-adminsdk.json');
 if (fs.existsSync(credPath)) {
   credential = admin.credential.cert(require(credPath));
 } else {
-  // Si no existe, usa variables de entorno (producción en Render)
   const privateKey = process.env.FIREBASE_PRIVATE_KEY;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 

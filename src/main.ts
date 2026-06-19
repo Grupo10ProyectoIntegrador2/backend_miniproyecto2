@@ -7,23 +7,16 @@ import roomsRoutes from './routes/rooms.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { initSocket } from './config/socket';
+import { allowedOrigins } from './config/cors';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Middlewares ──────────────────────────────────────────────────────────────
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : '*';
-
-app.use(cors({
-    origin: allowedOrigins,
-}));
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
-// ── Rutas REST ───────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
     res.json({ status: 'Backend running' });
 });
@@ -32,7 +25,6 @@ app.use('/auth', authRoutes);
 app.use('/rooms', roomsRoutes);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// ── Servidor HTTP + Socket.IO ────────────────────────────────────────────────
 const server = http.createServer(app);
 initSocket(server);
 

@@ -1,8 +1,7 @@
 import { db } from '../config/firebase';
 import { getUserProfile, type UserProfile } from './validation.service';
 import { deleteMessagesByRoomId } from './messages.service';
-
-const BATCH_LIMIT = 499; // Firestore permite máx. 500 operaciones por batch
+import { commitBatchDeletes } from '../utils/firestore';
 
 export interface Room {
     id: string;
@@ -24,29 +23,9 @@ export interface RoomParticipant extends UserProfile {
     role: 'Administrador' | 'Participante';
 }
 
-/**
- * Elimina una lista de documentos en lotes de hasta BATCH_LIMIT operaciones.
- * Previene exceder el límite de 500 operaciones por batch de Firestore.
- */
-async function commitBatchDeletes(docs: FirebaseFirestore.QueryDocumentSnapshot[]): Promise<void> {
-    for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
-        const chunk = docs.slice(i, i + BATCH_LIMIT);
-        const batch = db.batch();
-        chunk.forEach((doc) => batch.delete(doc.ref));
-        await batch.commit();
-    }
-}
-
-/**
- * Crea una nueva sala en la base de datos Firestore con un ID único autogenerado.
- * 
- * @param name Nombre de la sala
- * @param createdBy UID del usuario creador
- * @returns La sala recién creada
- */
 export async function createRoom(name: string, createdBy: string): Promise<Room> {
     try {
-        const roomRef = db.collection('rooms').doc(); // Genera un documento con ID único
+        const roomRef = db.collection('rooms').doc();
         const roomDoc: Room = {
             id: roomRef.id,
             name: name.trim(),
@@ -75,12 +54,6 @@ export async function createRoom(name: string, createdBy: string): Promise<Room>
     }
 }
 
-/**
- * Recupera todas las salas con estado activo de la base de datos Firestore,
- * ordenadas por fecha de creación descendente.
- * 
- * @returns Un arreglo con las salas activas
- */
 export async function getAllRooms(): Promise<Room[]> {
     try {
         const snapshot = await db
@@ -101,12 +74,6 @@ export async function getAllRooms(): Promise<Room[]> {
     }
 }
 
-/**
- * Obtiene el detalle de una sala específica por su ID.
- * 
- * @param id ID único de la sala
- * @returns La sala si existe, o null en caso contrario
- */
 export async function getRoomById(id: string): Promise<Room | null> {
     try {
         const doc = await db.collection('rooms').doc(id).get();
@@ -120,9 +87,6 @@ export async function getRoomById(id: string): Promise<Room | null> {
     }
 }
 
-/**
- * Verifica si un usuario es miembro de una sala (tiene membership activo).
- */
 export async function isRoomMember(roomId: string, uid: string): Promise<boolean> {
     try {
         const membershipId = `${roomId}_${uid}`;
@@ -134,13 +98,6 @@ export async function isRoomMember(roomId: string, uid: string): Promise<boolean
     }
 }
 
-/**
- * Une a un usuario a una sala activa.
- *
- * @param roomId ID de la sala
- * @param uid UID del usuario
- * @returns La sala a la que se unió
- */
 export async function joinRoom(roomId: string, uid: string): Promise<Room> {
     try {
         const room = await getRoomById(roomId);
@@ -173,12 +130,6 @@ export async function joinRoom(roomId: string, uid: string): Promise<Room> {
     }
 }
 
-/**
- * Obtiene los participantes de una sala junto con su perfil y fecha de ingreso.
- *
- * @param roomId ID de la sala
- * @returns Lista de participantes ordenada con el creador primero
- */
 export async function getRoomParticipantsByRoomId(roomId: string): Promise<RoomParticipant[]> {
     try {
         const room = await getRoomById(roomId);
@@ -233,12 +184,6 @@ export async function getRoomParticipantsByRoomId(roomId: string): Promise<RoomP
     }
 }
 
-/**
- * Obtiene únicamente las salas a las que un usuario se ha unido.
- *
- * @param uid UID del usuario
- * @returns Lista de salas unidas por el usuario
- */
 export async function getJoinedRoomsByUser(uid: string): Promise<Room[]> {
     try {
         const membershipsSnapshot = await db
@@ -265,39 +210,27 @@ export async function getJoinedRoomsByUser(uid: string): Promise<Room[]> {
     }
 }
 
-/**
- * Elimina todas las salas creadas por un usuario y los memberships asociados a ellas.
- * También elimina los memberships propios del usuario en salas de terceros.
- *
- * @param uid UID del usuario a limpiar
- */
 export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void> {
     try {
-        // 1. Obtener todas las salas creadas por este usuario
         const createdRoomsSnapshot = await db
             .collection('rooms')
             .where('createdBy', '==', uid)
             .get();
 
-        // 2. Para cada sala creada, recopilar documentos a eliminar
         const docsToDelete: FirebaseFirestore.QueryDocumentSnapshot[] = [];
 
         for (const roomDoc of createdRoomsSnapshot.docs) {
             const roomId = roomDoc.id;
 
-            // Recopilar memberships de esta sala
             const roomMembershipsSnapshot = await db
                 .collection('room_memberships')
                 .where('roomId', '==', roomId)
                 .get();
 
             docsToDelete.push(...roomMembershipsSnapshot.docs);
-
-            // Agregar la sala misma
             docsToDelete.push(roomDoc);
         }
 
-        // 3. Agregar los memberships del usuario en salas de otros
         const ownMembershipsSnapshot = await db
             .collection('room_memberships')
             .where('uid', '==', uid)
@@ -305,28 +238,17 @@ export async function deleteRoomsAndMembershipsByUser(uid: string): Promise<void
 
         docsToDelete.push(...ownMembershipsSnapshot.docs);
 
-        // 4. Eliminar todos los documentos en lotes paginados
         await commitBatchDeletes(docsToDelete);
 
-        // 5. Eliminar mensajes de las salas creadas por el usuario
         for (const roomDoc of createdRoomsSnapshot.docs) {
             await deleteMessagesByRoomId(roomDoc.id);
         }
-               
     } catch (error) {
         console.error(`Error al eliminar salas y memberships del usuario ${uid}:`, error);
         throw new Error('No se pudieron eliminar las salas del usuario. Intenta de nuevo más tarde.');
     }
 }
 
-/**
- * Edita el nombre de una sala existente.
- * Valida que el usuario que intenta editar sea el creador original.
- * @param roomId ID de la sala a editar
- * @param newName Nuevo nombre de la sala
- * @param uid UID del usuario que realiza la petición
- * @returns La sala actualizada
- */
 export async function updateRoomName(roomId: string, newName: string, uid: string): Promise<Room> {
     try {
         const roomRef = db.collection('rooms').doc(roomId);
@@ -338,7 +260,6 @@ export async function updateRoomName(roomId: string, newName: string, uid: strin
 
         const roomData = roomDoc.data() as Room;
 
-        // Validación de seguridad 
         if (roomData.createdBy !== uid) {
             throw new Error('No tienes permisos para editar esta sala.');
         }
@@ -353,12 +274,6 @@ export async function updateRoomName(roomId: string, newName: string, uid: strin
     }
 }
 
-/**
- * Elimina (desactiva) una sala existente de forma lógica o física.
- * Valida que el usuario que intenta eliminar sea el creador original.
- * @param roomId ID de la sala a eliminar
- * @param uid UID del usuario que realiza la petición
- */
 export async function deleteRoom(roomId: string, uid: string): Promise<void> {
     try {
         const roomRef = db.collection('rooms').doc(roomId);
@@ -370,26 +285,21 @@ export async function deleteRoom(roomId: string, uid: string): Promise<void> {
 
         const roomData = roomDoc.data() as Room;
 
-        // Validación de seguridad 
         if (roomData.createdBy !== uid) {
             throw new Error('No tienes permisos para eliminar esta sala.');
         }
 
-        // 1. Recopilar memberships a eliminar
         const membershipsSnapshot = await db
             .collection('room_memberships')
             .where('roomId', '==', roomId)
             .get();
 
-        // 2. Eliminar sala y memberships primero (datos críticos)
-        await roomRef.delete();
-        if (!membershipsSnapshot.empty) {
-            await commitBatchDeletes(membershipsSnapshot.docs);
-        }
+        const batch = db.batch();
+        batch.delete(roomRef);
+        membershipsSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
 
-        // 3. Eliminar historial de chat después (datos secundarios)
         await deleteMessagesByRoomId(roomId);
-
     } catch (error) {
         console.error(`Error al eliminar la sala ${roomId}:`, error);
         throw error instanceof Error ? error : new Error('No se pudo eliminar la sala.');

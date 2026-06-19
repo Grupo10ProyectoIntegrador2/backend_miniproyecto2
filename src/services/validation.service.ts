@@ -3,21 +3,11 @@ import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { deleteRoomsAndMembershipsByUser } from './rooms.service';
 
-// ─── Avatar ────────────────────────────────────────────────────────────────
-
-/**
- * Genera la URL de Gravatar a partir del correo electrónico.
- * Si el usuario tiene foto en Gravatar, se muestra; si no, se usa
- * un identicon generado automáticamente (d=identicon).
- */
 export function getAvatarUrl(email: string): string {
     const normalized = email.trim().toLowerCase();
     const hash = crypto.createHash('md5').update(normalized).digest('hex');
     return `https://www.gravatar.com/avatar/${hash}?s=200&d=identicon`;
 }
-
-
-// ─── Validaciones de formato ───────────────────────────────────────────────
 
 export function validateUsername(username: string): { valid: boolean; error?: string } {
     const trimmed = username?.trim() ?? '';
@@ -63,8 +53,6 @@ export function validateEmail(email: string): { valid: boolean; error?: string }
         return { valid: false, error: 'El correo electrónico no es válido.' };
     }
 
-    // ── Validación de correo institucional (.edu) ──
-    // Acepta: algo.edu, algo.edu.co, algo.edu.es, algo.edu.mx, etc.
     const eduRegex = /\.edu(\.[a-z]{2,})?$/i;
     if (!eduRegex.test(domain)) {
         return {
@@ -112,9 +100,6 @@ export function validateNames(firstName: string, lastName: string): { valid: boo
     return { valid: true };
 }
 
-
-// ─── Firestore: verificar existencia ──────────────────────────────────────
-
 export async function checkUsernameExists(username: string): Promise<boolean> {
     try {
         const snapshot = await db
@@ -144,9 +129,6 @@ export async function checkEmailExists(email: string): Promise<boolean> {
         throw new Error('No se pudo verificar la disponibilidad del correo. Intenta de nuevo.');
     }
 }
-
-
-// ─── Firestore: CRUD de perfil ─────────────────────────────────────────────
 
 export interface UserProfile {
     uid: string;
@@ -226,13 +208,8 @@ export async function updateUserProfile(uid: string, updates: {
 
 export async function deleteUserProfile(uid: string): Promise<void> {
     try {
-        // Eliminar las salas creadas por el usuario y todos sus memberships asociados
         await deleteRoomsAndMembershipsByUser(uid);
-
-        // Eliminar documento de Firestore
         await db.collection('users').doc(uid).delete();
-
-        // Eliminar usuario de Firebase Auth
         await admin.auth().deleteUser(uid);
     } catch (error) {
         console.error('Error eliminando usuario:', error);
