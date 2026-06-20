@@ -148,9 +148,61 @@ export function initSocket(httpServer: HttpServer): Server {
         });
 
         // ── Evento: desconexión ──────────────────────────────────────────────
-        socket.on('disconnect', (reason: string) => {
+        // 'disconnecting' fires BEFORE the socket leaves its rooms,
+        // so we can still broadcast to room members.
+        socket.on('disconnecting', (reason: string) => {
+            socket.rooms.forEach(room => {
+                if (room !== socket.id) {
+                    socket.to(room).emit('user-left', { socketId: socket.id, uid });
+                }
+            });
             console.log(`[Socket.IO] Cliente desconectado | id: ${socket.id} | razón: ${reason}`);
         });
+
+        // ── Evento: Offer ──────────────────────────────────────────────
+        socket.on('offer', (payload: { targetSocketId: string, offer: any }) => {  
+            try {
+                if (!payload || !payload.targetSocketId || !payload.offer) return;
+
+                socket.to(payload.targetSocketId).emit('offer', {
+                    senderSocketId: socket.id,
+                    offer: payload.offer
+            });
+            console.log(`[WebRTC] Oferta: ${socket.id} -> ${payload.targetSocketId}`);
+        } catch (error) {
+            console.error(`[WebRTC] Error procesando offer: `, error);
+        }
+        });
+
+        // ── Evento: Answer ──────────────────────────────────────────────
+        socket.on('answer', (payload: { targetSocketId: string, answer: any}) => {
+            try {
+                if (!payload || !payload.targetSocketId || !payload.answer) return;
+
+                socket.to(payload.targetSocketId).emit('answer', {
+                    senderSocketId: socket.id,
+                    answer: payload.answer
+                });
+                console.log(`[WebRTC] Respuesta: ${socket.id} -> ${payload.targetSocketId}`);
+            } catch (error) {
+                console.log(`[WebRTC] Error procesando answer: `, error);
+            }
+        });
+
+        // ── Evento: ice-candidate ──────────────────────────────────────────────
+        socket.on('ice-candidate', (payload: { targetSocketId: string, candidate: any}) => {
+            try {
+                if (!payload || !payload.targetSocketId || !payload.candidate) return;
+
+                socket.to(payload.targetSocketId).emit('candidate', {
+                    senderSocketId: socket.id,
+                    candidate: payload.candidate
+                });
+                console.log(`[WebRTC] ICE Candidate: ${socket.id} -> ${payload.targetSocketId}`);
+            } catch (error) {
+                console.log(`[WebRTC] Error procesando ice-candidate`, error);
+            }
+        })
     });
 
     return io;
