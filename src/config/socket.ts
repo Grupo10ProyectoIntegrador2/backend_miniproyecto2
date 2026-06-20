@@ -9,6 +9,78 @@ interface SendMessagePayload {
     content: string;
 }
 
+interface VideoCallEntry {
+    uid: string;
+    participant?: unknown;
+    socketId: string;
+}
+
+/** roomId -> uid -> video call participant */
+const activeVideoCalls = new Map<string, Map<string, VideoCallEntry>>();
+
+function buildVideoCallStatus(roomId: string) {
+    const roomCall = activeVideoCalls.get(roomId);
+    const entries = roomCall ? Array.from(roomCall.values()) : [];
+
+    return {
+        roomId,
+        active: entries.length > 0,
+        count: entries.length,
+        uids: entries.map((entry) => entry.uid),
+        participants: entries
+            .map((entry) => entry.participant)
+            .filter((participant): participant is NonNullable<typeof participant> => Boolean(participant)),
+    };
+}
+
+function broadcastVideoCallStatus(io: Server, roomId: string) {
+    io.to(roomId).emit('video-call-status', buildVideoCallStatus(roomId));
+}
+
+function removeUserFromVideoCall(io: Server, socket: Socket, roomId: string, notify = true): boolean {
+    const roomCall = activeVideoCalls.get(roomId);
+    if (!roomCall) return false;
+
+    const { uid } = getSocketUser(socket);
+    const removed = roomCall.delete(uid);
+
+    if (roomCall.size === 0) {
+        activeVideoCalls.delete(roomId);
+    }
+
+    if (removed && notify) {
+        broadcastVideoCallStatus(io, roomId);
+    }
+
+    return removed;
+}
+
+function removeUserFromAllVideoCalls(io: Server, socket: Socket) {
+    const { uid } = getSocketUser(socket);
+
+    for (const [roomId, roomCall] of activeVideoCalls.entries()) {
+        if (roomCall.has(uid)) {
+            roomCall.delete(uid);
+            if (roomCall.size === 0) {
+                activeVideoCalls.delete(roomId);
+            }
+            broadcastVideoCallStatus(io, roomId);
+        }
+    }
+}
+
+async function emitRoomPresence(io: Server, socket: Socket, roomId: string) {
+    const socketsInRoom = await io.in(roomId).fetchSockets();
+    const users = socketsInRoom
+        .filter((roomSocket) => roomSocket.id !== socket.id)
+        .map((roomSocket) => ({
+            socketId: roomSocket.id,
+            uid: (roomSocket.data.user as AuthUser).uid,
+            participant: (roomSocket.data.participant as unknown) ?? undefined,
+        }));
+
+    socket.emit('room-presence', { roomId, users });
+}
 
 function getSocketUser(socket: Socket): AuthUser {
     const user = socket.data.user;
@@ -89,11 +161,14 @@ export function initSocket(httpServer: HttpServer): Server {
                 }
 
                 const trimmedRoomId = roomId.trim();
+                socket.data.participant = participant;
                 await socket.join(trimmedRoomId);
                 console.log(`[Socket.IO] Socket ${socket.id} se unió a la sala: ${trimmedRoomId}`);
 
                 const messages = await getRoomMessages(trimmedRoomId);
                 socket.emit('chat-history', { roomId: trimmedRoomId, messages });
+                socket.emit('video-call-status', buildVideoCallStatus(trimmedRoomId));
+                await emitRoomPresence(io, socket, trimmedRoomId);
 
                 socket.to(trimmedRoomId).emit('user-joined', {
                     roomId: trimmedRoomId,
@@ -114,10 +189,56 @@ export function initSocket(httpServer: HttpServer): Server {
 
             // Verificar si el socket realmente está en la sala antes de irse y notificar
             if (socket.rooms.has(trimmedRoomId)) {
+                removeUserFromVideoCall(io, socket, trimmedRoomId);
                 socket.leave(trimmedRoomId);
                 console.log(`[Socket.IO] Socket ${socket.id} salió de la sala: ${trimmedRoomId}`);
                 socket.to(trimmedRoomId).emit('user-left', { socketId: socket.id, uid });
             }
+        });
+
+        // ── Evento: unirse a videollamada ───────────────────────────────────
+        socket.on('join-video-call', async (payload: { roomId: string; participant?: unknown }) => {
+            try {
+                if (!payload?.roomId) return;
+
+                const accessError = await assertCanAccessRoom(socket, payload.roomId);
+                if (accessError) {
+                    socket.emit('message-error', { message: accessError });
+                    return;
+                }
+
+                const trimmedRoomId = payload.roomId.trim();
+                if (!socket.rooms.has(trimmedRoomId)) {
+                    socket.emit('message-error', { message: 'Debes estar conectado al chat de la sala.' });
+                    return;
+                }
+
+                if (!activeVideoCalls.has(trimmedRoomId)) {
+                    activeVideoCalls.set(trimmedRoomId, new Map());
+                }
+
+                activeVideoCalls.get(trimmedRoomId)!.set(uid, {
+                    uid,
+                    participant: payload.participant,
+                    socketId: socket.id,
+                });
+
+                console.log(`[VideoCall] ${uid} se unió a la videollamada en ${trimmedRoomId}`);
+                broadcastVideoCallStatus(io, trimmedRoomId);
+            } catch (error) {
+                console.error('[VideoCall] Error en join-video-call:', error);
+                socket.emit('message-error', { message: 'No se pudo unir a la videollamada.' });
+            }
+        });
+
+        // ── Evento: salir de videollamada ───────────────────────────────────
+        socket.on('leave-video-call', (payload: { roomId: string } | string) => {
+            const roomId = typeof payload === 'string' ? payload : payload?.roomId;
+            const trimmedRoomId = roomId?.trim?.() ?? '';
+            if (!trimmedRoomId) return;
+
+            removeUserFromVideoCall(io, socket, trimmedRoomId);
+            console.log(`[VideoCall] ${uid} salió de la videollamada en ${trimmedRoomId}`);
         });
 
         socket.on('send-message', async (payload: SendMessagePayload) => {
@@ -151,6 +272,7 @@ export function initSocket(httpServer: HttpServer): Server {
         // 'disconnecting' fires BEFORE the socket leaves its rooms,
         // so we can still broadcast to room members.
         socket.on('disconnecting', (reason: string) => {
+            removeUserFromAllVideoCalls(io, socket);
             socket.rooms.forEach(room => {
                 if (room !== socket.id) {
                     socket.to(room).emit('user-left', { socketId: socket.id, uid });
