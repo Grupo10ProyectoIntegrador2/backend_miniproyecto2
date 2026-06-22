@@ -13,6 +13,9 @@ interface VideoCallEntry {
     uid: string;
     participant?: unknown;
     socketId: string;
+    audioMuted?: boolean;
+    videoMuted?: boolean;
+    isScreenSharing?: boolean;
 }
 
 /** roomId -> uid -> video call participant */
@@ -30,6 +33,13 @@ function buildVideoCallStatus(roomId: string) {
         participants: entries
             .map((entry) => entry.participant)
             .filter((participant): participant is NonNullable<typeof participant> => Boolean(participant)),
+        states: entries.map((entry) => ({
+            uid: entry.uid,
+            socketId: entry.socketId,
+            audioMuted: entry.audioMuted ?? false,
+            videoMuted: entry.videoMuted ?? false,
+            isScreenSharing: entry.isScreenSharing ?? false
+        })),
     };
 }
 
@@ -239,6 +249,54 @@ export function initSocket(httpServer: HttpServer): Server {
 
             removeUserFromVideoCall(io, socket, trimmedRoomId);
             console.log(`[VideoCall] ${uid} salió de la videollamada en ${trimmedRoomId}`);
+        });
+
+        // ── Evento: Control de AV (US-13) ───────────────────────────────────
+        socket.on('toggle-av', (payload: { roomId: string; audioMuted: boolean; videoMuted: boolean }) => {
+            try {
+                if (!payload || !payload.roomId) return;
+                const trimmedRoomId = payload.roomId.trim();
+
+                const roomCall = activeVideoCalls.get(trimmedRoomId);
+                if (roomCall && roomCall.has(uid)) {
+                    const entry = roomCall.get(uid)!;
+                    entry.audioMuted = payload.audioMuted;
+                    entry.videoMuted = payload.videoMuted;
+                }
+
+                socket.to(trimmedRoomId).emit('av-state-changed', {
+                    uid,
+                    socketId: socket.id,
+                    audioMuted: payload.audioMuted,
+                    videoMuted: payload.videoMuted
+                });
+                console.log(`[VideoCall] AV Toggled by ${uid} en ${trimmedRoomId}: audioMuted=${payload.audioMuted}, videoMuted=${payload.videoMuted}`);
+            } catch (error) {
+                console.error('[VideoCall] Error en toggle-av:', error);
+            }
+        });
+
+        // ── Evento: Compartir pantalla (US-14) ──────────────────────────────
+        socket.on('toggle-screen-share', (payload: { roomId: string; isScreenSharing: boolean }) => {
+            try {
+                if (!payload || !payload.roomId) return;
+                const trimmedRoomId = payload.roomId.trim();
+
+                const roomCall = activeVideoCalls.get(trimmedRoomId);
+                if (roomCall && roomCall.has(uid)) {
+                    const entry = roomCall.get(uid)!;
+                    entry.isScreenSharing = payload.isScreenSharing;
+                }
+
+                socket.to(trimmedRoomId).emit('screen-share-changed', {
+                    uid,
+                    socketId: socket.id,
+                    isScreenSharing: payload.isScreenSharing
+                });
+                console.log(`[VideoCall] Screen Share Toggled by ${uid} en ${trimmedRoomId}: isScreenSharing=${payload.isScreenSharing}`);
+            } catch (error) {
+                console.error('[VideoCall] Error en toggle-screen-share:', error);
+            }
         });
 
         socket.on('send-message', async (payload: SendMessagePayload) => {
