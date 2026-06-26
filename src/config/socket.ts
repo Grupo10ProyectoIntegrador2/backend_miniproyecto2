@@ -247,8 +247,12 @@ export function initSocket(httpServer: HttpServer): Server {
             const trimmedRoomId = roomId?.trim?.() ?? '';
             if (!trimmedRoomId) return;
 
-            removeUserFromVideoCall(io, socket, trimmedRoomId);
+            const removed = removeUserFromVideoCall(io, socket, trimmedRoomId);
             console.log(`[VideoCall] ${uid} salió de la videollamada en ${trimmedRoomId}`);
+
+            if (removed) {
+                socket.to(trimmedRoomId).emit('user-left', { socketId: socket.id, uid });
+            }
         });
 
         /**
